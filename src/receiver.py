@@ -4,7 +4,7 @@ import socket
 import time
 import threading
 from dataclasses import dataclass
-import Constant
+import utils.Constant as Constant
 
 class Control:
     def __init__(self,
@@ -17,14 +17,14 @@ class Control:
         self.all_state = ["CLOSED","LISTEN","ESTABLISHED","TIME_WAIT"]
         self.state = "CLOSED"
 
-        self.handshake()
+
     def transit(self,state):
         if state not in self.all_state:
             print(f"State {state} does not exists in Sender")
         else:
             self.state =  state
 
-    def handshake(self):
+    def receive(self):
         if self.state != "CLOSED":
             sys.exit(f"Receiver Handshaking when not CLOSED state is {self.state}")
         self.transit("LISTEN")
@@ -45,7 +45,7 @@ class Control:
                 #self.socket.send(ack_segment)
                 self.transit("ESTABLISHED")
                 print(f"state in receiver is {self.state}")
-                break
+            
 
 
 def parse_port(port_str, min_port=49152, max_port=65535):
@@ -73,11 +73,12 @@ if __name__ == "__main__":
             sender_port=sender_port,
             socket=sock
         )
-        while True:
-
-            buf,addr = control.socket.recvfrom(2048)
-            if int.from_bytes(buf[:2],byteorder='big') == Constant.SYN and control.state == "ESTABLISHED":
-                continue
+        control.receive()
+        # while True:
+            
+        #     buf,addr = control.socket.recvfrom(2048)
+        #     if int.from_bytes(buf[:2],byteorder='big') == Constant.SYN and control.state == "ESTABLISHED":
+        #         continue
     except KeyboardInterrupt:
         print("Shutting down receiver.")
     finally:
@@ -88,6 +89,8 @@ if __name__ == "__main__":
     '''
     At thsi stage, established connection. If received any more, and in eestalished state
     we ignore it 
+
+    python3 receiver.py 59998 49998 a.txt 1200
     '''
 
     # control.socket.close()  # Close the socket

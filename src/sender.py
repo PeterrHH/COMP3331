@@ -5,7 +5,8 @@ import time
 import threading
 import random
 from dataclasses import dataclass
-import Constant
+import utils.Constant as Constant
+import utils
 
 '''
 
@@ -39,34 +40,45 @@ class Control:
         self.all_state = ["CLOSED","SYN_SENT","ESTABLISHED","CLOSING","FIN_WAIT"]
         self.state = "CLOSED"
         self.curr_seqno = 0
-        self.handshake()
+        self.init_seqno = utils.gen_random()
 
+    def get_state(self):
+        return self.state
         
     def transit(self,state):
         if state not in self.all_state:
             print(f"State {state} does not exists in Sender")
         else:
             self.state =  state
+
+    def get_segment(self,type_field,seqno_field,data=None):
+        if data:
+            pass
+        else:
+            sent_segment = type_field + seqno_field
+        return sent_segment
     '''
     Initial Handshake, sent SYN and wait for ACK
     if no ACK for rto amount of time
     resent the SYN
+
     '''
-    def handshake(self):
-        if self.state != "CLOSED":
-            sys.exit(f"Sender Handshaking when not CLOSED")
-        seqno = random.randrange(2**16-1) 
-        self.curr_seqno = seqno
+
+    def send_setup(self):
+        self.curr_seqno = self.init_seqno
         type_num = Constant.SYN
         type_field = type_num.to_bytes(2,"big")
         seqno_field = type_num.to_bytes(2,"big")
-        sent_segment = type_field + seqno_field
-        print(f"add is {Constant.ADDRESS} port is {self.sender_port}")
+        sent_segment = self.get_segment(type_field,seqno_field)
         self.socket.send(sent_segment)
-        #self.socket.sendto(sent_segment,(Constant.ADDRESS,self.receiver_port))
         self.transit("SYN_SENT")
-        print(f"state in sender is {self.state}")
-        # waiting on the ACK
+        pass
+
+    def send_data(file_name):
+        pass
+
+    def receive(self):
+
         while True:
             try: 
                 print(f"waiting")
@@ -78,15 +90,19 @@ class Control:
                     # transit state
                     self.transit("ESTABLISHED")
                     print(f"state in sender is {self.state}")
+                    # Starting sendng file
             except socket.timeout:
-                self.socket.send(sent_segment)
+                continue
             except ConnectionRefusedError as e:
                 print(f"Connection refused error: {e}")
                 break
-                        
+            except KeyboardInterrupt:
+                print("Server stopped by user")
+                break
 
-    
-
+            
+            print(f"T- ESTABLISH")
+            # Connection established
 
 
 def setup_socket(host, port):
@@ -111,6 +127,7 @@ def setup_socket(host, port):
     sock.settimeout(0)  # Set socket to non-blocking mode
 
     return sock
+
 def parse_port(port_str, min_port=49152, max_port=65535):
     try:
         port = int(port_str)
@@ -122,19 +139,7 @@ def parse_port(port_str, min_port=49152, max_port=65535):
                  
     return port
 
-'''
-Initiate handshake with receiver:
-- send a SYN segment
-- expect to receive ACK back
-- if over rto time, resend SYN segment
-'''
-def handshake(control,rto):
 
-    while control.is_alive:
-        
-        break
-
-    pass
 
 if __name__ == "__main__":
 
@@ -154,11 +159,40 @@ if __name__ == "__main__":
         socket= sock,
         rto = rto)
     
-    control.socket.close()  # Close the socket
+    '''
+    Add Threading
+    Thread for Receiving
+    
+    '''
+    receiver = threading.Thread(target = control.receive) #
+    receiver.start()
 
-    print("Shut down complete.")
+    # # threading.Timer()
+    # control.receive()
+    try:
+        while control.is_alive:
+            if control.get_state() == "CLOSED" or control.get_state == "SYN_SENT":
+                try:
+                    control.send_setup()
+                    if control.get_state() == "ESTABLISHED":
+                        break
+                except control.socket.timeout:
+                    control.send_setup()
+            else:
+                # Connectoin established, ready to sent file
+                control.send_data(txt_file_to_send)
+                pass
+    except KeyboardInterrupt:
+        print(f"Control Z is PRESSED")
 
-    sys.exit(0)
+    finally:
+        receiver.join()
+        print(f"control satte is {control.get_state()}")
+        control.socket.close()  # Close the socket
+
+        print("Shut down complete.")
+
+        sys.exit(0)
 '''
 1. The sender should first open a UDP socket on sender_port and initiate a two-way
 handshake (SYN, ACK) for the connection establishment. The sender sends a SYN segment, and
@@ -166,4 +200,10 @@ the receiver responds with an ACK. This is different to the three-way handshake 
 TCP. If the ACK is not received before a timeout (rto msec), the sender should retransmit the
 SYN.
 
+FLP: probabiility of DATA SYN or FIN created by sender being dropped
+RLP: Determine prob of an ACK in reverse direction from the sender being dropped
+
+python3 sender.py 49998 59998 a.txt 1200 3000 0.1 0.05
+
+USE WIRESHARK TO TEST
 '''

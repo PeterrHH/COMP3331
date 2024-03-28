@@ -5,3 +5,5 @@ DATA = 0
 ACK = 1
 SYN = 2
 FIN = 3
+
+MAX_MSS = 1000 # in byte
