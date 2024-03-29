@@ -1,9 +1,5 @@
-A = [1, 2, 3, 4]
-B = [9, 3, 4, 5]
-
-for a in A:
-    if a in B:
-        B.remove(a)
-        break  # Exit the loop after removing the first matching element
-
-print(B)  # Output: [3, 4, 5]
+file_name = "../sample_txt/random1.txt"
+with open(file_name,"rb") as f:
+    file_content = f.read()
+    total_length = len(file_content)
+    print(f"Total length of the file: {total_length} bytes")

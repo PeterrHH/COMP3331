@@ -14,3 +14,10 @@ MAX_SEQ = 2**16-1
 
 SENDER_LOG_TEXT = "sender_log.txt"
 RECEIVER_LOG_TEXT = "receiver_log.txt"
+
+SEQNO_REVERSE_MAP = {
+    0:'DATA',
+    1:'ACK',
+    2:'SYN',
+    3:'FIN'
+}
