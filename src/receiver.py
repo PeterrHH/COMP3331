@@ -132,7 +132,7 @@ def parse_port(port_str, min_port=49152, max_port=65535):
                  
     return port
 
-def log_datacontrol,flag,time,type_segment,seq_no,number_of_bytes):
+def log_data(control,flag,time,type_segment,seq_no,number_of_bytes):
     if not control.start_time:
         log_time = 0
     else:
