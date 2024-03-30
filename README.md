@@ -1,6 +1,6 @@
 # COMP3331
-
-Assignment for COMP3331 Term 1 2024. For details checkout assignment spec.
+ 
+Assignment for COMP3331 Term 1 2024. For details checkout assignment spec. Do not copy as assignment spec is subject to change
 
 ## Project Architecture
 
