@@ -3,6 +3,8 @@
 Assignment for COMP3331 Term 1 2024. For details checkout assignment spec.
 
 ## Project Architecture
+
+'''
 .
 ├── src                     # Source files (including all project implementation file)
 │    ├──  utils             # Contains Helper functions and Constants Defined for the project
@@ -11,6 +13,8 @@ Assignment for COMP3331 Term 1 2024. For details checkout assignment spec.
 │    ├──  sender_log.txt    # Log file that logs behavior of segments send and received by sender as well as summary statistics in the connection
 │    ├──  receiver_log.txt  # Log file that logs behavior of segments send and received by receiver as well as summary statistics in the connection
 ├── sample_txt              # Contains sample txt files that can be used for testing purposes
+'''
+
 
 
 ## Sender Implementation
