@@ -249,7 +249,7 @@ def send_finish(control):
     #     try:
     type_num = Constant.FIN
     type_field = type_num.to_bytes(2,"big")
-    control.curr_seqno += 1
+    # control.curr_seqno += 1
     seqno_field = control.curr_seqno.to_bytes(2,"big")
     segment = type_field+seqno_field
 
@@ -266,15 +266,18 @@ def send_finish(control):
 '''
 
 '''
-def log_data(file,control,flag,time,type_segment,seq_no, number_of_bytes):
+def log_data(control, flag, time, type_segment, seq_no, number_of_bytes):
+    file_name = Constant.SENDER_LOG_TEXT
     if not control.start_time:
         log_time = 0
     else:
-        log_time = round((time-control.start_time)*1000,2)
+        log_time = round((time - control.start_time) * 1000, 2)
     segment_name = Constant.SEQNO_REVERSE_MAP[type_segment]
-    log_string = f"{flag} {log_time} {segment_name} {seq_no} {number_of_bytes}"
-    print(log_string)
-    pass
+    log_string = f"{flag} {log_time} {segment_name} {seq_no} {number_of_bytes}\n"
+
+    with open(file_name, "a") as log_file:
+        log_file.write(log_string)
+
 def timer_thread(control):
     # Loook at different cases. 
     if control.get_state() == "SYN_SENT":
@@ -300,6 +303,8 @@ if __name__ == "__main__":
     sock = setup_socket(Constant.ADDRESS, sender_port,receiver_port)
     # initialise a control block
 
+    with open(Constant.SENDER_LOG_TEXT, "w") as file:
+        file.write("")
     control = Control(
         sender_port = sender_port,
         receiver_port= receiver_port,

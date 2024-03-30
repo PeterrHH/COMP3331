@@ -18,6 +18,9 @@ class Control:
         self.state = "CLOSED"
         self.is_alive = True
         self.start_time = None
+        self.buffer = []
+        self.received_data = ""
+        self.in_order_seqno = None
 
 
     def transit(self,state):
@@ -46,10 +49,13 @@ class Control:
                     seq_no= seqno_num,
                     number_of_bytes=len(buf)-4
                 )
-                self.start_time = time.time()
+
+
                 if type_field == Constant.SYN:
                     # resent ACK
- 
+                    if self.state == "LISTEN":
+                        self.start_time = time.time()
+                        self.in_order_seqno = seqno_num+1
                     ack_seqno_num = seqno_num + 1
                     ack_type_field = ack_type_num.to_bytes(2,"big")
                     ack_seqno_field =  ack_seqno_num.to_bytes(2,"big")
@@ -66,10 +72,21 @@ class Control:
                     self.transit("ESTABLISHED")
                     # print(f"state in receiver is {self.state}")
                 elif type_field == Constant.DATA:
-                    data_received = buf[4:]
-    
-                    # print(data_received)
-                    #print(f"Receive DATA {len(data_received)}")
+
+                    data_received = buf[4:].decode('utf-8') 
+                    # print(f"data received type is {type(data_received)}")
+                    if seqno_num == self.in_order_seqno:
+                        # in order
+                        self.received_data += data_received
+                        self.in_order_seqno += len(data_received)
+                        for segment in self.buffer:
+                            if int.from_bytes(segment[:2],byteorder='big') == self.in_order_seqno:
+                                self.received_data += data_received
+                                self.in_order_seqno += len(data_received)
+
+                    else:
+                        self.buffer.append(buf)
+                        self.buffer.sort(key=lambda x: int.from_bytes(x[:2], byteorder='big'))
                     length_data = len(data_received)
                     ack_seqno_num= seqno_num+length_data
                     ack_type_field = ack_type_num.to_bytes(2,"big")
@@ -133,13 +150,19 @@ def parse_port(port_str, min_port=49152, max_port=65535):
     return port
 
 def log_data(control,flag,time,type_segment,seq_no,number_of_bytes):
+    file_name = Constant.RECEIVER_LOG_TEXT
     if not control.start_time:
         log_time = 0
     else:
         log_time = round((time-control.start_time)*1000,2)
     segment_name = Constant.SEQNO_REVERSE_MAP[type_segment]
-    log_string = f"{flag} {log_time} {segment_name} {seq_no} {number_of_bytes}"
-    print(log_string)
+    log_string = f"{flag} {log_time} {segment_name} {seq_no} {number_of_bytes}\n"
+    with open(file_name,"a") as log_file:
+        log_file.write(log_string)
+
+def write_text_to_file(control,dest_path):
+    with open(dest_path,"w") as file:
+        file.write(control.received_data)
 
 if __name__ == "__main__":
     receiver_port = parse_port(sys.argv[1])
@@ -147,6 +170,8 @@ if __name__ == "__main__":
     txt_file_received = sys.argv[3]
     max_win = sys.argv[4]
 
+    with open(Constant.RECEIVER_LOG_TEXT, "w") as file:
+        file.write("")
     sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
     sock.bind((Constant.ADDRESS,receiver_port))
     sock.connect((Constant.ADDRESS,sender_port))
@@ -169,6 +194,7 @@ if __name__ == "__main__":
         control.is_alive = False
     finally:
         # control.stop()
+        write_text_to_file(control,txt_file_received)
         control.socket.close()
         print("Receiver shut down complete.")
         sys.exit(0)
@@ -177,7 +203,7 @@ if __name__ == "__main__":
     At thsi stage, established connection. If received any more, and in eestalished state
     we ignore it 
 
-    python3 receiver.py 59979 49979 ../sample_txt/random1.txt 1200
+    python3 receiver.py 59979 49979 destination.txt 1200
     '''
 
     # control.socket.close()  # Close the socket
