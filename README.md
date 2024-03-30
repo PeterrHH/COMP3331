@@ -10,8 +10,8 @@ Assignment for COMP3331 Term 1 2024. For details checkout assignment spec. Do no
 │    ├──  utils               # Contains Helper functions and Constants Defined for the project
 │    ├──  receiver.py         # Implementation file for recevier.py
 │    ├──  sender.py           # Implementation file for sender.py
-│    ├──  sender_log.txt      # Log file that logs behavior of segments send and received by sender as well as summary statistics in the connection
-│    ├──  receiver_log.txt    # Log file that logs behavior of segments send and received by receiver as well as summary statistics in the connection
+│    ├──  sender_log.txt      # Log file for sender in connection
+│    ├──  receiver_log.txt    # Log file for receiver in connection
 ├── sample_txt                # Contains sample txt files that can be used for testing purposes
 
 ```
