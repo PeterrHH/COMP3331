@@ -43,6 +43,7 @@ class Control:
         self.curr_seqno = 0
         self.max_win = max_win
         self.init_seqno = utils.gen_random()
+        # self.init_seqno = 2 ** 16-5 # purely testing
         self.buffer = []
         self.timer = None
         self.start_time = None
@@ -63,47 +64,29 @@ class Control:
         return total_len >= self.max_win
     
     def start_timer(self):
+        print(f"START TIMER")
         if self.timer is not None:
             self.timer.cancel()
         self.timer = threading.Timer(control.rto, timer_thread, args=(control,))
         self.timer.start()
     
     def stop_timer(self):
+        print(f"STOP TIMER")
         if self.timer is not None:
             self.timer.cancel()
             self.timer = None
- 
-    '''
-    Initial Handshake, sent SYN and wait for ACK
-    if no ACK for rto amount of time
-    resent the SYN
+    
+    def update_seqno(self,data = None):
+        if data:
+            self.curr_seqno += len(data)
+        else:
+            self.curr_seqno += 1
+        if self.curr_seqno >= Constant.MAX_SEQ:
+            self.curr_seqno -= Constant.MAX_SEQ
+            print(f"TOO BIG, new seqno {self.curr_seqno}")
 
-    '''
-
-def send_setup(control):
-
-    control.curr_seqno = control.init_seqno
-    type_num = Constant.SYN
-    type_field = type_num.to_bytes(2,"big")
-    seqno_field = control.curr_seqno.to_bytes(2,"big")
-    sent_segment = type_field + seqno_field
-    control.socket.send(sent_segment)
-    log_data(control,
-        flag = "snd",
-        time = time.time(),
-        type_segment=type_num,
-        seq_no=control.curr_seqno,
-        number_of_bytes=0)
-    if control.start_time is None:
-        control.start_time = time.time()
-
-    control.curr_seqno += 1
-    control.transit("SYN_SENT")
-    # print(f"transit to SYN start time {control.start_time}")
-
-
-
-def receive(control):
+def receive(
+        control):
 
     while control.is_alive:
         try: 
@@ -112,13 +95,14 @@ def receive(control):
 
             type_field = int.from_bytes(buf[:2],byteorder='big')
             seqno_field = int.from_bytes(buf[2:4],byteorder='big')
-            #print(f"type {type_field} seqno {seqno_field} state is {control.get_state()}")
+
             log_data(control,
                 flag = "rcv",
                 time = time.time(),
-                type_segment=Constant.ACK,
+                type_segment=type_field,
                 seq_no=seqno_field,
                 number_of_bytes=len(buf)-4)
+            
             if type_field == Constant.ACK:
                 if control.get_state() == "SYN_SENT":
                 # transit state
@@ -136,20 +120,36 @@ def receive(control):
                     control.is_alive = False
 
                 elif control.get_state() == "ESTABLISHED":
-                    # print(f"recevied ACK # {seqno_field}")
-                    for segment in control.buffer:
-                        if int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:]) == seqno_field:
+                    print(f"recevied ACK # {seqno_field}")
+
+                    for idx,segment in enumerate(control.buffer):
+                        # if int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:]) == seqno_field:
+                        if utils.check_seqno_match(segment, seqno_field):
                             control.buffer.remove(segment)
+   
+        
+                            if idx == 0:
+                                control.stop_timer()
+                                if control.buffer:
+                                    control.start_timer()
+                            break
+
                             # print(f"ACK for packet {seqno_field} ")
 
 
                 elif control.get_state() == "CLOSING":
-                    if not control.buffer:
-                        control.timer.cancel()
-                    else:
-                        for segment in control.buffer:
-                            if int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:]) == seqno_field:
-                                control.buffer.remove(segment)
+                    print(f"RECEIVED IN CLOSING")
+                    # if not control.buffer:
+                    #     control.stop_timer()
+                    # else:
+                    for segment in control.buffer:
+                        # if int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:]) == seqno_field:
+                        if utils.check_seqno_match(segment, seqno_field):
+                            control.buffer.remove(segment)
+                            if idx == 0:
+                                control.stop_timer()
+                                if control.buffer:
+                                    control.start_timer()
                                 #print(f"ACK for packet {seqno_field} ")
                                 break
                 #print(f"Buffer length is {len(control.buffer)}")
@@ -169,7 +169,8 @@ def receive(control):
             print(f"RECEIVE EXCEPTION as")
             print(e)
 
-def setup_socket(host, my_port,peer_port):
+def setup_socket(
+        host, my_port,peer_port):
     """Setup a UDP socket for sending messages and receiving replies.
     Args:
         host (str): The hostname or IP address of the receiver.
@@ -189,7 +190,8 @@ def setup_socket(host, my_port,peer_port):
 
     return sock
 
-def parse_port(port_str, min_port=49152, max_port=65535):
+def parse_port(
+        port_str, min_port=49152, max_port=65535):
     try:
         port = int(port_str)
     except ValueError:
@@ -200,6 +202,46 @@ def parse_port(port_str, min_port=49152, max_port=65535):
                  
     return port
 
+
+'''
+Initial Handshake, sent SYN and wait for ACK
+if no ACK for rto amount of time
+resent the SYN
+
+'''
+
+def send_setup(
+        control,flp):
+
+    control.curr_seqno = control.init_seqno
+    type_num = Constant.SYN
+    type_field = type_num.to_bytes(2,"big")
+    seqno_field = control.curr_seqno.to_bytes(2,"big")
+    sent_segment = type_field + seqno_field
+    if random.random() < flp:
+        print(f"setup DROPPED")
+        log_data(control,
+            flag = "drp",
+            time = time.time(),
+            type_segment=type_num,
+            seq_no=control.curr_seqno,
+            number_of_bytes=0)
+    else:
+        control.socket.send(sent_segment)
+        log_data(control,
+            flag = "snd",
+            time = time.time(),
+            type_segment=type_num,
+            seq_no=control.curr_seqno,
+            number_of_bytes=0)
+    if control.start_time is None:
+        control.start_time = time.time()
+
+    control.update_seqno()
+    control.transit("SYN_SENT")
+    # print(f"transit to SYN start time {control.start_time}")
+
+
 '''
 Potential edge case:
 before reading, buffer is fine, but after adding it to buffer, it exceeds in size
@@ -207,7 +249,8 @@ WHICH SHOULD NOT BE SENT
 
 NEED TO ADD TIMER FOR SEND DATA
 '''
-def send_data(control,file_name):
+def send_data(
+        control,file_name,flp):
     #print(f"file_name is {file_name}")
     with open(file_name,"rb") as f:
         while True:
@@ -216,6 +259,7 @@ def send_data(control,file_name):
                 #print(f"read segment with byte size {len(bytes_read)}")
                 if not bytes_read:
                     control.transit("CLOSING")
+                    print(f"transmitting done")
                     # file transmitting is done
                     break
                 # print(f"READ ABOVE")
@@ -223,25 +267,41 @@ def send_data(control,file_name):
                 type_field = type_num.to_bytes(2,"big")
                 seqno_field = control.curr_seqno.to_bytes(2,"big")
                 segment = type_field+seqno_field+bytes_read
-                control.socket.send(segment)
-                log_data(control,
-                    flag = "snd",
-                    time = time.time(),
-                    type_segment=type_num,
-                    seq_no=control.curr_seqno,
-                    number_of_bytes=len(bytes_read))
+                                # control.curr_seqno += len(bytes_read)
+                # if control.curr_seqno >= Constant.MAX_SEQ:
+                #     control.curr_seqno -= Constant.MAX_SEQ
+                if random.random() < flp:
+                    print(f"Data seqno {control.curr_seqno} DROPPED")
+                    log_data(control,
+                        flag = "drp",
+                        time = time.time(),
+                        type_segment=type_num,
+                        seq_no=control.curr_seqno,
+                        number_of_bytes=len(bytes_read))
+                else:
+                    control.socket.send(segment)
+                    log_data(control,
+                        flag = "snd",
+                        time = time.time(),
+                        type_segment=type_num,
+                        seq_no=control.curr_seqno,
+                        number_of_bytes=len(bytes_read))
+                if not control.buffer:
+                    control.start_timer()
+
                 control.buffer.append(segment)
-                control.curr_seqno += len(bytes_read)
-                if control.curr_seqno > Constant.MAX_SEQ:
-                    control.curr_seqno -= Constant.MAX_SEQ
+                control.update_seqno(bytes_read)
                 # control.start_timer()
+            else:
+                print(f"FULL")
 
 
                 
             pass
     pass
 
-def send_finish(control):
+def send_finish(
+        control,flp):
     ''''
     Ensure all buffered data arrived correctly
     '''
@@ -252,21 +312,31 @@ def send_finish(control):
     # control.curr_seqno += 1
     seqno_field = control.curr_seqno.to_bytes(2,"big")
     segment = type_field+seqno_field
+    if random.random() < flp:
+        print(f"FINISH DROPPED")
+        log_data(control,
+                flag = "snd",
+                time = time.time(),
+                type_segment=type_num,
+                seq_no=control.curr_seqno,
+                number_of_bytes=0)
+    else:
+        control.socket.send(segment)
 
-    control.socket.send(segment)
+        log_data(control,
+                flag = "snd",
+                time = time.time(),
+                type_segment=type_num,
+                seq_no=control.curr_seqno,
+                number_of_bytes=0)
     control.transit("FIN_WAIT")
-    log_data(control,
-            flag = "snd",
-            time = time.time(),
-            type_segment=type_num,
-            seq_no=control.curr_seqno,
-            number_of_bytes=0)
 
     
 '''
 
 '''
-def log_data(control, flag, time, type_segment, seq_no, number_of_bytes):
+def log_data(
+        control, flag, time, type_segment, seq_no, number_of_bytes):
     file_name = Constant.SENDER_LOG_TEXT
     if not control.start_time:
         log_time = 0
@@ -278,16 +348,28 @@ def log_data(control, flag, time, type_segment, seq_no, number_of_bytes):
     with open(file_name, "a") as log_file:
         log_file.write(log_string)
 
-def timer_thread(control):
+def timer_thread(
+        control):
     # Loook at different cases. 
     if control.get_state() == "SYN_SENT":
         print("Timeout: Resending SYN")
         send_setup(control)
-    elif control.get_state() == "CLOSING":
+    elif control.get_state() == "CLOSING" or control.get_state() == "FIN_WAIT":
         print("Timeout: Resending FIN")
         send_finish(control)
+    elif control.get_state() == "ESTABLISHED":
+        print(f"Resending segment")
+        poped_segment = control.pop()
+        control.socket.send(poped_segment)
+        log_data(control,
+            flag = "snd",
+            time = time.time(),
+            type_segment=int.from_bytes(poped_segment[:2],byteorder='big'),
+            seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
+            number_of_bytes=len(poped_segment[4:]))
+        control.buffer.append(poped_segment)
     # Restart the timer if the control is still alive and in a state where ACK is expected
-    if control.is_alive and control.get_state() in ["SYN_SENT", "CLOSING"]:
+    if control.is_alive and control.get_state() in ["SYN_SENT", "CLOSING","FIN_WAIT","ESTABLISHED"]:
         control.start_timer()
 
 
@@ -298,8 +380,8 @@ if __name__ == "__main__":
     txt_file_to_send = sys.argv[3] # name of text file
     max_win = int(sys.argv[4]) #  the maximum window size in bytes for the sender window
     rto = int(sys.argv[5]) # retrainsimission timer in Milliseconds
-    flp = sys.argv[6] # forward lost probability
-    rlp = sys.argv[7] # reverse loss probability
+    flp = float(sys.argv[6]) # forward lost probability
+    rlp = float(sys.argv[7]) # reverse loss probability
     sock = setup_socket(Constant.ADDRESS, sender_port,receiver_port)
     # initialise a control block
 
@@ -319,35 +401,32 @@ if __name__ == "__main__":
     receiver = threading.Thread(target = receive,args=(control,)) #
     receiver.start()
 
-    # timer = threading.Timer(control.rto, timer_thread, args=(control,))
-    # timer.start()
-
-    # # threading.Timer()
-    # control.receive()
-    
     try:
         while control.is_alive:
             # print(f"start with state {control.get_state()} cont alive {control.is_alive}")
             if control.timer:
+
                 continue
             if control.get_state() == "CLOSED" or control.get_state() == "SYN_SENT":
-                send_setup(control)
+                send_setup(control,flp)
                 control.start_timer()
             elif control.get_state() == "ESTABLISHED":
                 #print(f"Now here send file data")
                 # Connectoin established, ready to sent file
-                send_data(control,txt_file_to_send)
-                # control.is_alive = False
+                send_data(control,txt_file_to_send,flp)
+                #print(f"Finish Sending DATA at state {control.get_state()}")
+                # control.is_alive = False  
             elif control.get_state() == "CLOSING":
+                #print(f"control buffer length {control.buffer} and time {control.timer}")
                 if not control.buffer:
-                    send_finish(control)
+                    send_finish(control,flp)
                     control.start_timer()
             else:
                 print(f"ending at state {control.get_state()} is alive {control.is_alive}")
                 control.is_alive = False
                 break
 
-    
+        print("LOPP FINISHED in sending")
 
     except KeyboardInterrupt:
         print(f"Control Z is PRESSED")
@@ -373,7 +452,7 @@ SYN.
 FLP: probabiility of DATA SYN or FIN created by sender being dropped
 RLP: Determine prob of an ACK in reverse direction from the sender being dropped
 
-python3 sender.py 49979 59979 ../sample_txt/random1.txt 1200 3000 0.1 0.05
+python3 sender.py 49975 59975 ../sample_txt/random1.txt 1000 3000 0 0.05
 
 USE WIRESHARK TO TEST
 '''

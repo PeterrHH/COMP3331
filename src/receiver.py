@@ -22,7 +22,14 @@ class Control:
         self.received_data = ""
         self.in_order_seqno = None
 
-
+    def update_seq_num(self,seq_num,data = None):
+        if data:
+            update_num = seq_num + len(data)
+        else:
+            update_num = seq_num + 1
+        if update_num >= Constant.MAX_SEQ:
+            update_num -= Constant.MAX_SEQ
+        return update_num
     def transit(self,state):
         if state not in self.all_state:
             print(f"State {state} does not exists in Sender")
@@ -55,8 +62,8 @@ class Control:
                     # resent ACK
                     if self.state == "LISTEN":
                         self.start_time = time.time()
-                        self.in_order_seqno = seqno_num+1
-                    ack_seqno_num = seqno_num + 1
+                        self.in_order_seqno = self.update_seq_num(seqno_num)
+                    ack_seqno_num = self.update_seq_num(seqno_num)
                     ack_type_field = ack_type_num.to_bytes(2,"big")
                     ack_seqno_field =  ack_seqno_num.to_bytes(2,"big")
                     ack_segment = ack_type_field + ack_seqno_field
@@ -78,17 +85,17 @@ class Control:
                     if seqno_num == self.in_order_seqno:
                         # in order
                         self.received_data += data_received
-                        self.in_order_seqno += len(data_received)
+                        self.in_order_seqno = self.update_seq_num(self.in_order_seqno,data_received)
                         for segment in self.buffer:
-                            if int.from_bytes(segment[:2],byteorder='big') == self.in_order_seqno:
+                            if int.from_bytes(segment[2:4],byteorder='big') == self.in_order_seqno:
                                 self.received_data += data_received
                                 self.in_order_seqno += len(data_received)
 
                     else:
                         self.buffer.append(buf)
-                        self.buffer.sort(key=lambda x: int.from_bytes(x[:2], byteorder='big'))
+                        self.buffer.sort(key=lambda x: int.from_bytes(x[2:4], byteorder='big'))
                     length_data = len(data_received)
-                    ack_seqno_num= seqno_num+length_data
+                    ack_seqno_num= self.update_seq_num(seqno_num,data_received)
                     ack_type_field = ack_type_num.to_bytes(2,"big")
                     ack_seqno_field = ack_seqno_num.to_bytes(2,"big")
                     ack_segment = ack_type_field + ack_seqno_field
@@ -106,9 +113,10 @@ class Control:
                     # Then reentering CLOSED state.
                     self.transit("TIME_WAIT")
                     # print(f"received {type_field}  sent ack_segment ack_segment {int.from_bytes(ack_seqno_field,byteorder='big')}")
-                    ack_seqno_num = seqno_num+1
+                    ack_seqno_num = self.update_seq_num(seqno_num)
                     ack_type_field = ack_type_num.to_bytes(2,"big")
                     ack_seqno_field = ack_seqno_num.to_bytes(2,"big")
+                    ack_segment = ack_type_field + ack_seqno_field
                     self.socket.send(ack_segment)
                     log_data(control,
                         flag = "snd",
@@ -116,7 +124,7 @@ class Control:
                         type_segment=ack_type_num,
                         seq_no=ack_seqno_num,
                         number_of_bytes=0)
-
+                    print(f"FOR FINWAIT send seg_no {ack_seqno_num}")
                     time.sleep(2*Constant.MSL)
                     self.transit("CLOSED")
                     self.is_alive = False
@@ -138,7 +146,8 @@ class Control:
 
 
 
-def parse_port(port_str, min_port=49152, max_port=65535):
+def parse_port(
+        port_str, min_port=49152, max_port=65535):
     try:
         port = int(port_str)
     except ValueError:
@@ -149,7 +158,8 @@ def parse_port(port_str, min_port=49152, max_port=65535):
                  
     return port
 
-def log_data(control,flag,time,type_segment,seq_no,number_of_bytes):
+def log_data(
+        control,flag,time,type_segment,seq_no,number_of_bytes):
     file_name = Constant.RECEIVER_LOG_TEXT
     if not control.start_time:
         log_time = 0
@@ -160,7 +170,8 @@ def log_data(control,flag,time,type_segment,seq_no,number_of_bytes):
     with open(file_name,"a") as log_file:
         log_file.write(log_string)
 
-def write_text_to_file(control,dest_path):
+def write_text_to_file(
+        control,dest_path):
     with open(dest_path,"w") as file:
         file.write(control.received_data)
 
@@ -168,7 +179,7 @@ if __name__ == "__main__":
     receiver_port = parse_port(sys.argv[1])
     sender_port = parse_port(sys.argv[2])
     txt_file_received = sys.argv[3]
-    max_win = sys.argv[4]
+    max_win = int(sys.argv[4])
 
     with open(Constant.RECEIVER_LOG_TEXT, "w") as file:
         file.write("")
@@ -203,7 +214,7 @@ if __name__ == "__main__":
     At thsi stage, established connection. If received any more, and in eestalished state
     we ignore it 
 
-    python3 receiver.py 59979 49979 destination.txt 1200
+    python3 receiver.py 59974 49974 destination.txt 1000
     '''
 
     # control.socket.close()  # Close the socket
