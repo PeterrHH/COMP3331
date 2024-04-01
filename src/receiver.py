@@ -21,6 +21,20 @@ class Control:
         self.buffer = []
         self.received_data = ""
         self.in_order_seqno = None
+        self.timer = None
+    
+    def start_timer(self):
+        print(f"START TIMER")
+        if self.timer is not None:
+            self.timer.cancel()
+        self.timer = threading.Timer(Constant.MSL*2,timer_thread,args=(self,))
+        self.timer.start()
+    
+    def stop_timer(self):
+        print(f"STOP TIMER")
+        if self.timer is not None:
+            self.timer.cancel()
+            self.timer = None
 
     def update_seq_num(self,seq_num,data = None):
         if data:
@@ -36,113 +50,129 @@ class Control:
         else:
             self.state =  state
 
-    def receive(self):
-        # if self.state != "CLOSED":
-        #     sys.exit(f"Receiver Handshaking when not CLOSED state is {self.state}")
-        self.transit("LISTEN")
-        while self.is_alive:
-            try:
-                buf,addr = self.socket.recvfrom(2048)
-                # print(buf)
-                # print("---------------")
-                type_field = int.from_bytes(buf[:2],byteorder='big')
-                seqno_num = int.from_bytes(buf[2:4],byteorder='big')
-                ack_type_num = Constant.ACK
-                log_data(
-                    self,
-                    flag = "rcv",
-                    time= time.time(),
-                    type_segment=type_field,
-                    seq_no= seqno_num,
-                    number_of_bytes=len(buf)-4
-                )
+def receive(control):
+    # if self.state != "CLOSED":
+    #     sys.exit(f"Receiver Handshaking when not CLOSED state is {self.state}")
+    control.transit("LISTEN")
+    while control.is_alive:
+
+        try:
+
+            buf,addr = control.socket.recvfrom(2048)
+            # print(buf)
+            # print("---------------")
+            if control.timer:
+                print(f"Canceled")
+                control.stop_timer()
+            type_field = int.from_bytes(buf[:2],byteorder='big')
+            seqno_num = int.from_bytes(buf[2:4],byteorder='big')
+            ack_type_num = Constant.ACK
+            log_data(
+                control,
+                flag = "rcv",
+                time= time.time(),
+                type_segment=type_field,
+                seq_no= seqno_num,
+                number_of_bytes=len(buf)-4
+            )
 
 
-                if type_field == Constant.SYN:
-                    # resent ACK
-                    if self.state == "LISTEN":
-                        self.start_time = time.time()
-                        self.in_order_seqno = self.update_seq_num(seqno_num)
-                    ack_seqno_num = self.update_seq_num(seqno_num)
-                    ack_type_field = ack_type_num.to_bytes(2,"big")
-                    ack_seqno_field =  ack_seqno_num.to_bytes(2,"big")
-                    ack_segment = ack_type_field + ack_seqno_field
-                    self.socket.send(ack_segment)
-                    log_data(control,
-                        flag = "snd",
-                        time = time.time(),
-                        type_segment=ack_type_num,
-                        seq_no=ack_seqno_num,
-                        number_of_bytes=0)
-    
+            if type_field == Constant.SYN:
+                # resent ACK
+                if control.state == "LISTEN":
+                    control.start_time = time.time()
+                    control.in_order_seqno = control.update_seq_num(seqno_num)
+                ack_seqno_num = control.update_seq_num(seqno_num)
+                ack_type_field = ack_type_num.to_bytes(2,"big")
+                ack_seqno_field =  ack_seqno_num.to_bytes(2,"big")
+                ack_segment = ack_type_field + ack_seqno_field
+                control.socket.send(ack_segment)
 
-                    self.transit("ESTABLISHED")
-                    # print(f"state in receiver is {self.state}")
-                elif type_field == Constant.DATA:
+                log_data(control,
+                    flag = "snd",
+                    time = time.time(),
+                    type_segment=ack_type_num,
+                    seq_no=ack_seqno_num,
+                    number_of_bytes=0)
 
-                    data_received = buf[4:].decode('utf-8') 
-                    # print(f"data received type is {type(data_received)}")
-                    if seqno_num == self.in_order_seqno:
-                        # in order
-                        self.received_data += data_received
-                        self.in_order_seqno = self.update_seq_num(self.in_order_seqno,data_received)
-                        for segment in self.buffer:
-                            if int.from_bytes(segment[2:4],byteorder='big') == self.in_order_seqno:
-                                self.received_data += data_received
-                                self.in_order_seqno += len(data_received)
 
-                    else:
-                        self.buffer.append(buf)
-                        self.buffer.sort(key=lambda x: int.from_bytes(x[2:4], byteorder='big'))
-                    length_data = len(data_received)
-                    ack_seqno_num= self.update_seq_num(seqno_num,data_received)
-                    ack_type_field = ack_type_num.to_bytes(2,"big")
-                    ack_seqno_field = ack_seqno_num.to_bytes(2,"big")
-                    ack_segment = ack_type_field + ack_seqno_field
-                    #print(f"received {type_field} sent ack_segment ack_segment {int.from_bytes(ack_seqno_field,byteorder='big')}")
-                    self.socket.send(ack_segment)
-                    log_data(control,
-                        flag = "snd",
-                        time = time.time(),
-                        type_segment=ack_type_num,
-                        seq_no=ack_seqno_num,
-                        number_of_bytes=0)
-                elif type_field == Constant.FIN:
-                    # When receiving FIN, move to TIME_WAIT state
-                    # wait for two maximum segment lifetime (MSLs). One MSL is 1s.
-                    # Then reentering CLOSED state.
-                    self.transit("TIME_WAIT")
-                    # print(f"received {type_field}  sent ack_segment ack_segment {int.from_bytes(ack_seqno_field,byteorder='big')}")
-                    ack_seqno_num = self.update_seq_num(seqno_num)
-                    ack_type_field = ack_type_num.to_bytes(2,"big")
-                    ack_seqno_field = ack_seqno_num.to_bytes(2,"big")
-                    ack_segment = ack_type_field + ack_seqno_field
-                    self.socket.send(ack_segment)
-                    log_data(control,
-                        flag = "snd",
-                        time = time.time(),
-                        type_segment=ack_type_num,
-                        seq_no=ack_seqno_num,
-                        number_of_bytes=0)
-                    print(f"FOR FINWAIT send seg_no {ack_seqno_num}")
-                    time.sleep(2*Constant.MSL)
-                    self.transit("CLOSED")
-                    self.is_alive = False
-            except socket.timeout:
-                continue
-            except ConnectionRefusedError as e:
-                print(f"Connection refused error: {e}")
-                control.is_alive = False
+                control.transit("ESTABLISHED")
+                # print(f"state in receiver is {self.state}")
+            elif type_field == Constant.DATA:
+
+                data_received = buf[4:].decode('utf-8') 
+                # print(f"data received type is {type(data_received)}")
+                if seqno_num == control.in_order_seqno:
+                    # in order
+                    control.received_data += data_received
+                    control.in_order_seqno = control.update_seq_num(control.in_order_seqno,data_received)
+                    for segment in control.buffer:
+                        if int.from_bytes(segment[2:4],byteorder='big') == control.in_order_seqno:
+                            control.received_data += data_received
+                            control.in_order_seqno += len(data_received)
+
+                else:
+                    control.buffer.append(buf)
+                    control.buffer.sort(key=lambda x: int.from_bytes(x[2:4], byteorder='big'))
+                length_data = len(data_received)
+                ack_seqno_num= control.update_seq_num(seqno_num,data_received)
+                ack_type_field = ack_type_num.to_bytes(2,"big")
+                ack_seqno_field = ack_seqno_num.to_bytes(2,"big")
+                ack_segment = ack_type_field + ack_seqno_field
+                #print(f"received {type_field} sent ack_segment ack_segment {int.from_bytes(ack_seqno_field,byteorder='big')}")
+                control.socket.send(ack_segment)
+                log_data(control,
+                    flag = "snd",
+                    time = time.time(),
+                    type_segment=ack_type_num,
+                    seq_no=ack_seqno_num,
+                    number_of_bytes=0)
+            elif type_field == Constant.FIN:
+                # When receiving FIN, move to TIME_WAIT state
+                # wait for two maximum segment lifetime (MSLs). One MSL is 1s.
+                # Then reentering CLOSED state.
+                control.transit("TIME_WAIT")
+                # print(f"received {type_field}  sent ack_segment ack_segment {int.from_bytes(ack_seqno_field,byteorder='big')}")
+                ack_seqno_num = control.update_seq_num(seqno_num)
+                ack_type_field = ack_type_num.to_bytes(2,"big")
+                ack_seqno_field = ack_seqno_num.to_bytes(2,"big")
+                ack_segment = ack_type_field + ack_seqno_field
+                control.socket.send(ack_segment)
+                log_data(control,
+                    flag = "snd",
+                    time = time.time(),
+                    type_segment=ack_type_num,
+                    seq_no=ack_seqno_num,
+                    number_of_bytes=0)
+                control.start_timer()
+                '''
+                Should wait two seconds, set is_alive to False and close but it does not
+                '''
+                print(f"FOR FINWAIT send seg_no {ack_seqno_num}")
+                # time.sleep(2*Constant.MSL)
+                # self.transit("CLOSED")
+                # self.is_alive = False
+
+            else:
+                pass
+            # print(f"alive is {control.is_alive.is_set()}")
+        except socket.timeout:
+            print(f"socket timeout")
+            continue
+        except ConnectionRefusedError as e:
+            print(f"Connection refused error: {e}")
+            control.is_alive = False
+            break
+        except BlockingIOError:
+            if not control.is_alive:
                 break
-            except BlockingIOError:
-                print(f"Non-blocking socket didn't receive data, retrying...")
-                continue
-            except KeyboardInterrupt:
-                print("Server stopped by user")
-                break
-            except Exception as e:
-                print(f"RECEIVE EXCEPTION")
-                print(e)
+            continue
+        except KeyboardInterrupt:
+            print("Server stopped by user")
+            break
+        except Exception as e:
+            print(f"RECEIVE EXCEPTION")
+            print(e)
 
 
 
@@ -175,6 +205,13 @@ def write_text_to_file(
     with open(dest_path,"w") as file:
         file.write(control.received_data)
 
+def timer_thread(control):
+    control.transit("CLOSED")
+    control.is_alive = False # Clear the event to signal the main thread to stop
+    #print(f"Timer thread set control to CLOSED and cleared is_alive event")
+
+
+
 if __name__ == "__main__":
     receiver_port = parse_port(sys.argv[1])
     sender_port = parse_port(sys.argv[2])
@@ -186,6 +223,7 @@ if __name__ == "__main__":
     sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
     sock.bind((Constant.ADDRESS,receiver_port))
     sock.connect((Constant.ADDRESS,sender_port))
+    sock.settimeout(0)  # Set socket to non-blocking mode
     control = Control(
         receiver_port= receiver_port,
         sender_port=sender_port,
@@ -194,7 +232,8 @@ if __name__ == "__main__":
 
     try:
 
-        control.receive()
+        # control.receive()
+        receive(control)
         # while True:
             
         #     buf,addr = control.socket.recvfrom(2048)
@@ -213,6 +252,15 @@ if __name__ == "__main__":
     '''
     At thsi stage, established connection. If received any more, and in eestalished state
     we ignore it 
+
+    if receive FIN
+        resent ACK
+        check if first time:
+            true: Set a 2second timer
+            false: DO nothing
+
+    times up break and finish
+    
 
     python3 receiver.py 59974 49974 destination.txt 1000
     '''

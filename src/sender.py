@@ -66,7 +66,7 @@ class Control:
         #print(f"START TIMER")
         if self.timer is not None:
             self.timer.cancel()
-        self.timer = threading.Timer(control.rto, timer_thread, args=(control,flp,))
+        self.timer = threading.Timer(self.rto, timer_thread, args=(self,flp,))
         self.timer.start()
     
     def stop_timer(self):
@@ -85,7 +85,7 @@ class Control:
             print(f"TOO BIG, new seqno {self.curr_seqno}")
 
 def receive(
-        control):
+        control,rlp):
 
     while control.is_alive:
         try: 
@@ -94,6 +94,15 @@ def receive(
 
             type_field = int.from_bytes(buf[:2],byteorder='big')
             seqno_field = int.from_bytes(buf[2:4],byteorder='big')
+
+            if random.random() < rlp:
+                log_data(control,
+                    flag = "drp",
+                    time = time.time(),
+                    type_segment=type_field,
+                    seq_no=seqno_field,
+                    number_of_bytes=len(buf)-4)
+                continue
 
             log_data(control,
                 flag = "rcv",
@@ -113,7 +122,7 @@ def receive(
                 # Starting sendng file
                 elif control.get_state() == "FIN_WAIT":
                     # transit state
-                    #print(f"receivedat FINWAIT with {type_field} {seqno_field}")
+                    print(f"receivedat FINWAIT with {type_field} {seqno_field}")
                     control.transit("CLOSED")
                     control.stop_timer()
                     control.is_alive = False
@@ -156,6 +165,7 @@ def receive(
             continue
         except ConnectionRefusedError as e:
             print(f"Connection refused error: {e}")
+            print(f"Control state {control.get_state()}")
             control.is_alive = False
             break
         except BlockingIOError:
@@ -412,7 +422,7 @@ if __name__ == "__main__":
     Thread for Receiving
     
     '''
-    receiver = threading.Thread(target = receive,args=(control,)) #
+    receiver = threading.Thread(target = receive,args=(control,rlp,)) #
     receiver.start()
 
     try:
@@ -421,20 +431,19 @@ if __name__ == "__main__":
             if control.timer:
                 continue
             if control.get_state() == "CLOSED" or control.get_state() == "SYN_SENT":
-                #send_setup(control,0.3) # use to test drop ACK in SYN
+                #send_setup(control,0.4) # use to test drop ACK in SYN
                 send_setup(control,flp)
                 control.start_timer()
             elif control.get_state() == "ESTABLISHED":
-                #print(f"Now here send file data")
                 # Connectoin established, ready to sent file
                 send_data(control,txt_file_to_send,flp)
                 #print(f"Finish Sending DATA at state {control.get_state()}")
                 # control.is_alive = False  
             elif control.get_state() == "CLOSING" or control.get_state() == "FIN_WAIT":
-                #print(f"control buffer length {control.buffer} and time {control.timer}")
+                #print(f"control buffer length {control.buffer} and time {control.timer} state is {control.get_state()}")
                 if not control.buffer:
-                    send_finish(control,0.5)
-                    #send_finish(control,flp)
+                    #send_finish(control,0.3)
+                    send_finish(control,flp) # For testing purporses
                     control.start_timer()
             else:
                 print(f"ending at state {control.get_state()} is alive {control.is_alive}")
