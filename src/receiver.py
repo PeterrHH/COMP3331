@@ -22,6 +22,9 @@ class Control:
         self.received_data = ""
         self.in_order_seqno = None
         self.timer = None
+        self.segment_received = 0
+        self.duplicate_received = 0
+        self.duplicate_ack = 0
     
     def start_timer(self):
         print(f"START TIMER")
@@ -62,7 +65,6 @@ def receive(control):
             # print(buf)
             # print("---------------")
             if control.timer:
-                print(f"Canceled")
                 control.stop_timer()
             type_field = int.from_bytes(buf[:2],byteorder='big')
             seqno_num = int.from_bytes(buf[2:4],byteorder='big')
@@ -105,15 +107,21 @@ def receive(control):
                 if seqno_num == control.in_order_seqno:
                     # in order
                     control.received_data += data_received
+                    control.segment_received += 1
                     control.in_order_seqno = control.update_seq_num(control.in_order_seqno,data_received)
                     for segment in control.buffer:
                         if int.from_bytes(segment[2:4],byteorder='big') == control.in_order_seqno:
                             control.received_data += data_received
                             control.in_order_seqno += len(data_received)
+                            # Check for Duplicates
+                            control.segment_received += 1
+             
 
                 else:
                     control.buffer.append(buf)
                     control.buffer.sort(key=lambda x: int.from_bytes(x[2:4], byteorder='big'))
+
+
                 length_data = len(data_received)
                 ack_seqno_num= control.update_seq_num(seqno_num,data_received)
                 ack_type_field = ack_type_num.to_bytes(2,"big")
@@ -210,6 +218,15 @@ def timer_thread(control):
     control.is_alive = False # Clear the event to signal the main thread to stop
     #print(f"Timer thread set control to CLOSED and cleared is_alive event")
 
+def log_summary(control):
+    dest_path = Constant.RECEIVER_LOG_TEXT
+    with open(dest_path,"a") as file:
+        file.write("\n")
+        file.write(f"Original data received:        {len(control.received_data)}\n")
+        file.write(f"Original segments received:    {str(control.segment_received)}\n")
+        file.write(f"Dup data segments received:    {str(control.duplicate_received)}\n")
+        file.write(f"Dup ack segments sent:         {str(control.duplicate_ack)}\n")
+
 
 
 if __name__ == "__main__":
@@ -245,6 +262,7 @@ if __name__ == "__main__":
     finally:
         # control.stop()
         write_text_to_file(control,txt_file_received)
+        log_summary(control,)
         control.socket.close()
         print("Receiver shut down complete.")
         sys.exit(0)

@@ -48,6 +48,15 @@ class Control:
         self.timer = None
         self.start_time = None
 
+        # Log data
+        self.data_sent = 0
+        self.data_ack = 0
+        self.segment_sent = 0
+        self.retransmit_segment = 0
+        self.dup_ack_received = 0
+        self.data_segment_dropped = 0
+        self.ack_segment_dropped = 0
+
     def get_state(self):
         return self.state
         
@@ -102,6 +111,8 @@ def receive(
                     type_segment=type_field,
                     seq_no=seqno_field,
                     number_of_bytes=len(buf)-4)
+                if control.get_state() in ["ESTABLISHED","CLOSING"]:
+                    control.ack_segment_dropped += 1
                 continue
 
             log_data(control,
@@ -134,7 +145,7 @@ def receive(
                         # if int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:]) == seqno_field:
                         if utils.check_seqno_match(segment, seqno_field):
                             control.buffer.remove(segment)
-   
+                            control.data_ack += len(segment[4:])
         
                             if idx == 0:
                                 control.stop_timer()
@@ -154,6 +165,7 @@ def receive(
                         # if int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:]) == seqno_field:
                         if utils.check_seqno_match(segment, seqno_field):
                             control.buffer.remove(segment)
+                            control.data_ack += len(segment[4:])
                             if idx == 0:
                                 control.stop_timer()
                                 if control.buffer:
@@ -288,6 +300,7 @@ def send_data(
                         type_segment=type_num,
                         seq_no=control.curr_seqno,
                         number_of_bytes=len(bytes_read))
+                    control.data_segment_dropped += 1
                 else:
 
                     log_data(control,
@@ -296,7 +309,11 @@ def send_data(
                         type_segment=type_num,
                         seq_no=control.curr_seqno,
                         number_of_bytes=len(bytes_read))
+                    
+
                     control.socket.send(segment)
+                control.segment_sent += 1
+                control.data_sent += len(bytes_read)
                 if not control.buffer:
                     control.start_timer()
 
@@ -382,6 +399,7 @@ def timer_thread(
                 type_segment=int.from_bytes(poped_segment[:2],byteorder='big'),
                 seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
                 number_of_bytes=len(poped_segment[4:]))
+            control.data_segment_dropped += 1
             pass
         else:
             log_data(control,
@@ -390,12 +408,34 @@ def timer_thread(
                 type_segment=int.from_bytes(poped_segment[:2],byteorder='big'),
                 seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
                 number_of_bytes=len(poped_segment[4:]))
+            control.retransmit_segment += 1
+            print(f"Retransmit for seq {int.from_bytes(poped_segment[2:4],byteorder='big')}")
             control.socket.send(poped_segment)
         # control.buffer.append(poped_segment)
     # Restart the timer if the control is still alive and in a state where ACK is expected
     if control.is_alive and control.get_state() in ["CLOSING","ESTABLISHED"]:
         control.start_timer()
-
+'''
+self.data_sent = 0
+self.data_ack = 0
+self.segment_sent = 0
+self.retransmit_segment = 0
+self.dup_ack_received = 0
+self.data_segment_dropped = 0
+self.ack_segment_dropped = 0
+'''
+def log_summary(control):
+    dest_path = Constant.SENDER_LOG_TEXT
+    with open(dest_path,"a") as file:
+        file.write("\n")
+        file.write(f"Original data sent:        {control.data_sent}\n")
+        file.write(f"Original data acked:       {control.data_ack}\n")
+        file.write(f"Original segments sent:    {control.segment_sent}\n")
+        file.write(f"Retransmitted segments:    {control.retransmit_segment}\n")
+        file.write(f"Dup acks received:         {control.dup_ack_received}\n")
+        file.write(f"Data segments dropped:     {control.data_segment_dropped}\n")
+        file.write(f"Ack segments dropped:      {str(control.ack_segment_dropped)}\n")
+        
 
 if __name__ == "__main__":
 
@@ -456,6 +496,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Exception is {e}")
     finally:
+        log_summary(control)
         if control.timer:
             control.timer.cancel()
         receiver.join()
