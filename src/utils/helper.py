@@ -16,7 +16,8 @@ seqno_field: seq# from packet
 can be use to check for matches and duplicates.
 '''
 def check_seqno_match(segment, seqno_field):
-    segment_seqno = int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:])
+    # segment_seqno = int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:])
+    segment_seqno = int.from_bytes(segment[2:4],byteorder='big')
     if  segment_seqno > Constant.MAX_SEQ:
         segment_seqno -= Constant.MAX_SEQ
     

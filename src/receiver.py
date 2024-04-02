@@ -22,9 +22,14 @@ class Control:
         self.received_data = ""
         self.in_order_seqno = None
         self.timer = None
+
+        # Log data
         self.segment_received = 0
         self.duplicate_received = 0
         self.duplicate_ack = 0
+    
+    def seqno_match(self,seqno):
+        return self.in_order_seqno == seqno
     
     def start_timer(self):
         print(f"START TIMER")
@@ -80,11 +85,11 @@ def receive(control):
 
 
             if type_field == Constant.SYN:
-                # resent ACK
+
                 if control.state == "LISTEN":
                     control.start_time = time.time()
                     control.in_order_seqno = control.update_seq_num(seqno_num)
-                ack_seqno_num = control.update_seq_num(seqno_num)
+                ack_seqno_num = control.in_order_seqno
                 ack_type_field = ack_type_num.to_bytes(2,"big")
                 ack_seqno_field =  ack_seqno_num.to_bytes(2,"big")
                 ack_segment = ack_type_field + ack_seqno_field
@@ -105,12 +110,16 @@ def receive(control):
                 data_received = buf[4:].decode('utf-8') 
                 # print(f"data received type is {type(data_received)}")
                 if seqno_num == control.in_order_seqno:
-                    # in order
+                    # in order directly add to data read
+                    print(f"seq# {seqno_num} content added")
                     control.received_data += data_received
                     control.segment_received += 1
                     control.in_order_seqno = control.update_seq_num(control.in_order_seqno,data_received)
+                    # check that with this data being read, if any previous gotten data
+                    # can be put into the read fiel
                     for segment in control.buffer:
                         if int.from_bytes(segment[2:4],byteorder='big') == control.in_order_seqno:
+                            print(f"seq# {int.from_bytes(segment[2:4],byteorder='big')} content added with ack {ack_seqno_num}")
                             control.received_data += data_received
                             control.in_order_seqno += len(data_received)
                             # Check for Duplicates
@@ -118,12 +127,14 @@ def receive(control):
              
 
                 else:
+                    # No inorder, previous packets are lost
+                    # the ACK NUMBER SHOULD BE FOR PREVIOUS 
                     control.buffer.append(buf)
                     control.buffer.sort(key=lambda x: int.from_bytes(x[2:4], byteorder='big'))
 
 
                 length_data = len(data_received)
-                ack_seqno_num= control.update_seq_num(seqno_num,data_received)
+                ack_seqno_num= control.in_order_seqno
                 ack_type_field = ack_type_num.to_bytes(2,"big")
                 ack_seqno_field = ack_seqno_num.to_bytes(2,"big")
                 ack_segment = ack_type_field + ack_seqno_field
@@ -288,3 +299,19 @@ if __name__ == "__main__":
     # print("Shut down complete.")
 
     # sys.exit(0)
+
+'''
+[1,2,3]
+Recevier received [1]
+3, ACK 1 # ACK 3
+
+'''
+
+'''
+Sender 
+[2,3,4]
+
+[2,3,4]
+
+[3,4,5]
+'''

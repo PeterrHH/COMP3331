@@ -40,7 +40,7 @@ class Control:
         # self.socket.settimeout(self.rto/1000)
         self.all_state = ["CLOSED","SYN_SENT","ESTABLISHED","CLOSING","FIN_WAIT"]
         self.state = "CLOSED"
-        self.curr_seqno = 0
+        self.curr_seqno = 0 # track the ACK that is supposed to be received from the receiver
         self.max_win = max_win
         self.init_seqno = utils.gen_random()
         # self.init_seqno = 2 ** 16-5 # purely testing
@@ -48,6 +48,7 @@ class Control:
         self.timer = None
         self.start_time = None
 
+        self.dup_count = 0
         # Log data
         self.data_sent = 0
         self.data_ack = 0
@@ -91,7 +92,16 @@ class Control:
             self.curr_seqno += 1
         if self.curr_seqno >= Constant.MAX_SEQ:
             self.curr_seqno -= Constant.MAX_SEQ
-            print(f"TOO BIG, new seqno {self.curr_seqno}")
+        print(f"Update Seqno to {self.curr_seqno}")
+    
+    def get_send_seqno(self,data):
+        total_length = 0
+        for segment in self.buffer[1:]:
+            total_length += len(segment[4:])
+        return_length = self.curr_seqno + total_length
+        while return_length >= Constant.MAX_SEQ:
+            return_length -= Constant.MAX_SEQ
+        return return_length
 
 def receive(
         control,rlp):
@@ -127,7 +137,9 @@ def receive(
                 # transit state
                     control.transit("ESTABLISHED")
                     control.stop_timer()
-
+                    assert seqno_field == control.curr_seqno
+                    # if seqno_field == control.curr_seqno + 1:
+                    #     control.curr_seqno == seqno_field
                     #print(f"Transition to - ESTABLISHED")
                 # print(f"state in sender is {self.state}")
                 # Starting sendng file
@@ -139,38 +151,36 @@ def receive(
                     control.is_alive = False
 
                 elif control.get_state() == "ESTABLISHED":
-                    print(f"recevied ACK # {seqno_field}")
+                    top_segment = control.buffer[0]
+                    print(f"recevied ACK # {seqno_field} curr_seqno {control.curr_seqno}")
+                    if seqno_field == control.curr_seqno:
+                        # match the first one
+                        control.stop_timer()
+                        control.buffer.remove(top_segment)
+                        control.data_ack += len(top_segment[4:])
 
-                    for idx,segment in enumerate(control.buffer):
-                        # if int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:]) == seqno_field:
-                        if utils.check_seqno_match(segment, seqno_field):
-                            control.buffer.remove(segment)
-                            control.data_ack += len(segment[4:])
-        
-                            if idx == 0:
-                                control.stop_timer()
-                                if control.buffer:
-                                    control.start_timer()
-                            break
-
-                            # print(f"ACK for packet {seqno_field} ")
-
+                        if control.buffer:
+                            control.start_timer()
+                            control.update_seqno(data = control.buffer[0][:4])
+                    else:
+                        # duplicate ACK
+                        control.dup_ack_received += 1
 
                 elif control.get_state() == "CLOSING":
                     print(f"RECEIVED IN CLOSING")
                     # if not control.buffer:
                     #     control.stop_timer()
                     # else:
-                    for segment in control.buffer:
-                        # if int.from_bytes(segment[2:4],byteorder='big')+len(segment[4:]) == seqno_field:
-                        if utils.check_seqno_match(segment, seqno_field):
-                            control.buffer.remove(segment)
-                            control.data_ack += len(segment[4:])
-                            if idx == 0:
-                                control.stop_timer()
-                                if control.buffer:
-                                    control.start_timer()
-                                #print(f"ACK for packet {seqno_field} ")
+                    if control.buffer:
+                        top_segment = control.buffer[0]
+                        if seqno_field == control.curr_seqno:
+                            control.buffer.remove(top_segment)
+                            control.data_ack += len(top_segment[4:])
+                            control.stop_timer()
+                            if control.buffer:
+                                control.start_timer()
+                                control.update_seqno(data = control.buffer[0][:4])
+                                    #print(f"ACK for packet {seqno_field} ")
                                 break
                 #print(f"Buffer length is {len(control.buffer)}")
         except socket.timeout:
@@ -269,6 +279,11 @@ before reading, buffer is fine, but after adding it to buffer, it exceeds in siz
 WHICH SHOULD NOT BE SENT
 
 NEED TO ADD TIMER FOR SEND DATA
+
+First in the buffer,
+- Update Curr sequence, the ACK received later be used to match this, indicting in order recevied
+Not in the buffer,
+-  Put it in the buffer, do not update curtr seqeucen just yet, wait till it becomes first in the packet.
 '''
 def send_data(
         control,file_name,flp):
@@ -287,7 +302,8 @@ def send_data(
                 # print(f"READ ABOVE")
                 type_num = Constant.DATA
                 type_field = type_num.to_bytes(2,"big")
-                seqno_field = control.curr_seqno.to_bytes(2,"big")
+                send_seqno = control.get_send_seqno(bytes_read)
+                seqno_field = send_seqno.to_bytes(2,"big")
                 segment = type_field+seqno_field+bytes_read
                                 # control.curr_seqno += len(bytes_read)
                 # if control.curr_seqno >= Constant.MAX_SEQ:
@@ -309,16 +325,20 @@ def send_data(
                         type_segment=type_num,
                         seq_no=control.curr_seqno,
                         number_of_bytes=len(bytes_read))
-                    
+
 
                     control.socket.send(segment)
                 control.segment_sent += 1
                 control.data_sent += len(bytes_read)
                 if not control.buffer:
                     control.start_timer()
-
+                    print(f"Update_seqno")
+                    control.update_seqno(bytes_read)
+                '''
+                Distinction required, on whether segment is first in buffer
+                or others in buffer
+                '''
                 control.buffer.append(segment)
-                control.update_seqno(bytes_read)
                 # control.start_timer()
 
 
@@ -390,7 +410,7 @@ def timer_thread(
         print(f"Resending segment")
         control.stop_timer()
         poped_segment = control.buffer[0]
-
+        control.retransmit_segment += 1
         if random.random() < flp:
             # still need to be dropped
             log_data(control,
@@ -400,6 +420,7 @@ def timer_thread(
                 seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
                 number_of_bytes=len(poped_segment[4:]))
             control.data_segment_dropped += 1
+            
             pass
         else:
             log_data(control,
@@ -408,7 +429,7 @@ def timer_thread(
                 type_segment=int.from_bytes(poped_segment[:2],byteorder='big'),
                 seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
                 number_of_bytes=len(poped_segment[4:]))
-            control.retransmit_segment += 1
+
             print(f"Retransmit for seq {int.from_bytes(poped_segment[2:4],byteorder='big')}")
             control.socket.send(poped_segment)
         # control.buffer.append(poped_segment)
@@ -516,7 +537,7 @@ SYN.
 FLP: probabiility of DATA SYN or FIN created by sender being dropped
 RLP: Determine prob of an ACK in reverse direction from the sender being dropped
 
-python3 sender.py 49975 59975 ../sample_txt/random1.txt 1000 3000 0 0.05
+python3 sender.py 49974 59974 ../sample_txt/random1.txt 1000 1000 0 0
 
 USE WIRESHARK TO TEST
 '''
