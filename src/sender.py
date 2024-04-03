@@ -73,14 +73,14 @@ class Control:
         return total_len >= self.max_win
     
     def start_timer(self):
-        #print(f"START TIMER")
+        print(f"START TIMER")
         if self.timer is not None:
             self.timer.cancel()
         self.timer = threading.Timer(self.rto, timer_thread, args=(self,flp,))
         self.timer.start()
     
     def stop_timer(self):
-        #print(f"STOP TIMER")
+        print(f"STOP TIMER")
         if self.timer is not None:
             self.timer.cancel()
             self.timer = None
@@ -92,7 +92,7 @@ class Control:
             self.curr_seqno += 1
         if self.curr_seqno >= Constant.MAX_SEQ:
             self.curr_seqno -= Constant.MAX_SEQ
-        print(f"Update Seqno to {self.curr_seqno}")
+        #print(f"Update Seqno to {self.curr_seqno}")
     
     def get_send_seqno(self,data):
         total_length = 0
@@ -174,15 +174,15 @@ def receive(
                     if control.buffer:
                         top_segment = control.buffer[0]
                         if seqno_field == control.curr_seqno:
-                            control.buffer.remove(top_segment)
-                            control.data_ack += len(top_segment[4:])
                             control.stop_timer()
+                            print(f"before remove buffer size {len(control.buffer)}")
+                            control.buffer.remove(top_segment)
+                            print(f"before after buffer size {len(control.buffer)}")
+                            control.data_ack += len(top_segment[4:])
                             if control.buffer:
+                                print(f"start the timer here with buffer {control.buffer}")
                                 control.start_timer()
                                 control.update_seqno(data = control.buffer[0][:4])
-                                    #print(f"ACK for packet {seqno_field} ")
-                                break
-                #print(f"Buffer length is {len(control.buffer)}")
         except socket.timeout:
             continue
         except ConnectionRefusedError as e:
@@ -332,7 +332,7 @@ def send_data(
                 control.data_sent += len(bytes_read)
                 if not control.buffer:
                     control.start_timer()
-                    print(f"Update_seqno")
+                    #print(f"Update_seqno")
                     control.update_seqno(bytes_read)
                 '''
                 Distinction required, on whether segment is first in buffer
@@ -407,7 +407,7 @@ def timer_thread(
         control.stop_timer()
         # send_finish(control,flp)
     elif control.get_state() == "CLOSING" or control.get_state() == "ESTABLISHED":
-        print(f"Resending segment")
+        print(f"Resending segment buf size {len(control.buffer)} timer is {control.timer}")
         control.stop_timer()
         poped_segment = control.buffer[0]
         control.retransmit_segment += 1
@@ -492,7 +492,7 @@ if __name__ == "__main__":
             if control.timer:
                 continue
             if control.get_state() == "CLOSED" or control.get_state() == "SYN_SENT":
-                #send_setup(control,0.4) # use to test drop ACK in SYN
+                #send_setup(control,0.3) # use to test drop ACK in SYN
                 send_setup(control,flp)
                 control.start_timer()
             elif control.get_state() == "ESTABLISHED":
@@ -503,8 +503,9 @@ if __name__ == "__main__":
             elif control.get_state() == "CLOSING" or control.get_state() == "FIN_WAIT":
                 #print(f"control buffer length {control.buffer} and time {control.timer} state is {control.get_state()}")
                 if not control.buffer:
-                    #send_finish(control,0.3)
-                    send_finish(control,flp) # For testing purporses
+
+                    #send_finish(control,0.6)# For testing purporses
+                    send_finish(control,flp) 
                     control.start_timer()
             else:
                 print(f"ending at state {control.get_state()} is alive {control.is_alive}")

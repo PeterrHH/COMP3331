@@ -4,9 +4,7 @@
 #     total_length = len(file_content)
 #     print(f"Total length of the file: {total_length} bytes")
 
-a = []
+a = ["A"]
 
-if not a:
-    print("TRUE")
-else:
-    print("False")
+a.remove("A")
+print(a)
