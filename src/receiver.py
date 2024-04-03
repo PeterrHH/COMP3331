@@ -104,7 +104,7 @@ def receive(control):
 
 
                 control.transit("ESTABLISHED")
-                # print(f"state in receiver is {self.state}")
+
             elif type_field == Constant.DATA:
 
                 data_received = buf[4:].decode('utf-8') 
@@ -131,7 +131,7 @@ def receive(control):
                     # the ACK NUMBER SHOULD BE FOR PREVIOUS 
                     control.buffer.append(buf)
                     control.buffer.sort(key=lambda x: int.from_bytes(x[2:4], byteorder='big'))
-
+                    control.duplicate_ack += 1
 
                 length_data = len(data_received)
                 ack_seqno_num= control.in_order_seqno

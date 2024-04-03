@@ -4,11 +4,8 @@
 #     total_length = len(file_content)
 #     print(f"Total length of the file: {total_length} bytes")
 
-a = ["A","B"]
+a = ["A","B","C","D","E"]
 
-a.remove("A")
-print(a)
-a.append("C")
-print(a)
-a.remove("B")
-print(a)
+for idx,value in enumerate(a):
+    a.remove(value)
+    print(f"idx = {idx} corresponding {a[idx]} a is {a}")

@@ -85,11 +85,14 @@ class Control:
             self.timer.cancel()
             self.timer = None
     
-    def update_seqno(self,data = None):
+    def update_seqno(self,data = None,data_length = None):
         if data:
             self.curr_seqno += len(data)
         else:
-            self.curr_seqno += 1
+            if data_length:
+                self.curr_seqno += data_length
+            else:
+                self.curr_seqno += 1
         if self.curr_seqno >= Constant.MAX_SEQ:
             self.curr_seqno -= Constant.MAX_SEQ
         #print(f"Update Seqno to {self.curr_seqno}")
@@ -159,12 +162,40 @@ def receive(
 
                         control.data_ack += len(top_segment[4:])
                         control.buffer.remove(top_segment)
-
-                        # if control.buffer:
-                        #     control.update_seqno(data = control.buffer[0][4:])
-                        #     control.start_timer()
-
                         print(f"REMOVING")
+                    elif seqno_field > control.curr_seqno:
+                        # Cumulative ACK
+                        # for segment in control.buffer:
+                        #     control.stop_timer()
+                        #     control.buffer.remove(segment)
+                        #     if 
+                        #     control.start_timer()
+                        control.stop_timer()
+                        total_data_len = 0
+                        removable = []
+                        for idx,segment in enumerate(control.buffer):
+                            curr_segment_seqno = int.from_bytes(segment[2:4],byteorder="big")
+                            curr_segment_length = len(segment[4:])
+                            removable.append(segment)
+                            if idx > 0:
+                                total_data_len += curr_segment_length
+                            if curr_segment_seqno + curr_segment_length == seqno_field:
+                                control.data_ack += (curr_segment_length+ len(control.buffer[0][4:]))
+                                break
+                        
+                        for segment in removable:
+                            control.buffer.remove(segment)
+                        control.update_seqno(data_length = total_data_len)
+
+                        if control.buffer:
+                            control.update_seqno(data = control.buffer[0][4:])
+                            control.start_timer()
+                        
+
+                        pass
+
+                        
+
                     else:
                         # duplicate ACK
                         control.dup_ack_received += 1
