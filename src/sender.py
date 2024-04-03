@@ -73,14 +73,14 @@ class Control:
         return total_len >= self.max_win
     
     def start_timer(self):
-        print(f"START TIMER")
+        #print(f"START TIMER")
         if self.timer is not None:
             self.timer.cancel()
         self.timer = threading.Timer(self.rto, timer_thread, args=(self,flp,))
         self.timer.start()
     
     def stop_timer(self):
-        print(f"STOP TIMER")
+        #print(f"STOP TIMER")
         if self.timer is not None:
             self.timer.cancel()
             self.timer = None
@@ -138,10 +138,7 @@ def receive(
                     control.transit("ESTABLISHED")
                     control.stop_timer()
                     assert seqno_field == control.curr_seqno
-                    # if seqno_field == control.curr_seqno + 1:
-                    #     control.curr_seqno == seqno_field
-                    #print(f"Transition to - ESTABLISHED")
-                # print(f"state in sender is {self.state}")
+
                 # Starting sendng file
                 elif control.get_state() == "FIN_WAIT":
                     # transit state
@@ -156,33 +153,42 @@ def receive(
                     if seqno_field == control.curr_seqno:
                         # match the first one
                         control.stop_timer()
-                        control.buffer.remove(top_segment)
-                        control.data_ack += len(top_segment[4:])
-
-                        if control.buffer:
+                        if len(control.buffer) > 1:
+                            control.update_seqno(data = control.buffer[1][4:])
                             control.start_timer()
-                            control.update_seqno(data = control.buffer[0][:4])
+
+                        control.data_ack += len(top_segment[4:])
+                        control.buffer.remove(top_segment)
+
+                        # if control.buffer:
+                        #     control.update_seqno(data = control.buffer[0][4:])
+                        #     control.start_timer()
+
+                        print(f"REMOVING")
                     else:
                         # duplicate ACK
                         control.dup_ack_received += 1
 
                 elif control.get_state() == "CLOSING":
                     print(f"RECEIVED IN CLOSING")
-                    # if not control.buffer:
-                    #     control.stop_timer()
-                    # else:
+
+                    print(f"recevied ACK # {seqno_field} curr_seqno {control.curr_seqno} length {len(control.buffer)}")
                     if control.buffer:
+                        
                         top_segment = control.buffer[0]
                         if seqno_field == control.curr_seqno:
                             control.stop_timer()
+                            if len(control.buffer) > 1:
+                                control.start_timer()
+                                control.update_seqno(data = control.buffer[1][4:])
                             print(f"before remove buffer size {len(control.buffer)}")
                             control.buffer.remove(top_segment)
                             print(f"before after buffer size {len(control.buffer)}")
                             control.data_ack += len(top_segment[4:])
-                            if control.buffer:
-                                print(f"start the timer here with buffer {control.buffer}")
-                                control.start_timer()
-                                control.update_seqno(data = control.buffer[0][:4])
+                            # if control.buffer:
+                            #     #print(f"start the timer here with buffer {control.buffer}")
+                            #     control.start_timer()
+                            #     control.update_seqno(data = control.buffer[0][:4])
         except socket.timeout:
             continue
         except ConnectionRefusedError as e:
@@ -302,6 +308,7 @@ def send_data(
                 # print(f"READ ABOVE")
                 type_num = Constant.DATA
                 type_field = type_num.to_bytes(2,"big")
+                print(f"sending with {control.curr_seqno} with len {len(bytes_read)}")
                 send_seqno = control.get_send_seqno(bytes_read)
                 seqno_field = send_seqno.to_bytes(2,"big")
                 segment = type_field+seqno_field+bytes_read
@@ -407,7 +414,7 @@ def timer_thread(
         control.stop_timer()
         # send_finish(control,flp)
     elif control.get_state() == "CLOSING" or control.get_state() == "ESTABLISHED":
-        print(f"Resending segment buf size {len(control.buffer)} timer is {control.timer}")
+        #print(f"Resending segment buf size {len(control.buffer)} timer is {control.timer}")
         control.stop_timer()
         poped_segment = control.buffer[0]
         control.retransmit_segment += 1
@@ -541,4 +548,10 @@ RLP: Determine prob of an ACK in reverse direction from the sender being dropped
 python3 sender.py 49974 59974 ../sample_txt/random1.txt 1000 1000 0 0
 
 USE WIRESHARK TO TEST
+'''
+
+'''
+In slidding window, sender and receiver thread sometimes work a bit arbitrarily,
+packet removes, MAKE IT TRANSFER THE NEXT PACKET
+
 '''
