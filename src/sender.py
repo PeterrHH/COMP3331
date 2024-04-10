@@ -105,7 +105,7 @@ class Control:
 
     def add_ack_buffer(self,ack_number):
         if len(self.past_ack) == 3:
-            self.past_ack.pop()
+            self.past_ack.pop(0)
 
         self.past_ack.append(ack_number)
         
@@ -343,9 +343,10 @@ def send_data(
     with open(file_name,"rb") as f:
         while True:
             if len(control.past_ack) == 3:
+                
                 if control.past_ack[1:] == control.past_ack[:1]:
                     #FAST RETRANSMIT
-                    print(f"FAST RETRANSMIT with ACK {control.past_ack[1]}")
+                    print(f"FAST RETRANSMIT with ACK {control.past_ack}")
                     data_retransmit(control,flp)
                     control.start_timer()
                     pass
