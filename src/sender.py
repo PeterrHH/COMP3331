@@ -176,51 +176,34 @@ def receive(
                     print(f"-----len ack {len(control.past_ack)} buf len {len(control.buffer)}------")
                     control.add_ack_buffer(seqno_field)
 
-                    top_segment = control.buffer[0]
-                    print(f"recevied ACK # {seqno_field} curr_seqno {control.curr_seqno}")
-                    if seqno_field == control.curr_seqno:
-                        # match the first one
-                        control.stop_timer()
-                        if len(control.buffer) > 1:
-                            control.update_seqno(data = control.buffer[1][4:])
-                            control.start_timer()
-                        print(f"ACKING DATA {len(top_segment[4:])}")
-                        control.data_ack += len(top_segment[4:])
-                        control.buffer.remove(top_segment)
-                        # print(f"REMOVING")
-                    elif seqno_field > control.curr_seqno:
-                        # Cumulative ACK
-                        print(f"    CUMULATIVE ACK POSITION with")
-                        control.stop_timer()
-                        total_data_len = 0
-                        removable = []
-                        first_data_len = 0
-                        for idx,segment in enumerate(control.buffer):
-                            curr_segment_seqno = int.from_bytes(segment[2:4],byteorder="big")
-                            curr_segment_length = len(segment[4:])
-                            removable.append(segment)
+                    acked_segment_count = 0
+                    acked_data_size = 0
+                    first = True
+                    # Remove all segments from the buffer that are acknowledged by the received ACK
+                    while control.buffer:
+                        top_segment = control.buffer[0]
+                        top_segment_seqno = int.from_bytes(top_segment[2:4], byteorder="big")
+                        top_segment_end_seqno = (top_segment_seqno + len(top_segment[4:])) % Constant.MAX_SEQ
 
-                            if idx > 0:
-                                total_data_len += curr_segment_length
-                            else:
-                                first_data_len = curr_segment_length
-                            print(f"    total data len {total_data_len} sum {curr_segment_seqno + curr_segment_length}")
-                            if curr_segment_seqno + curr_segment_length == seqno_field:
-                                print(f"DUP ACKING DATA {(curr_segment_length+ len(control.buffer[0][4:]))}")
-                                # control.data_ack += (curr_segment_length+ len(control.buffer[0][4:]))
-                                control.data_ack += total_data_len + first_data_len
-                                break
-                        
-                        for segment in removable:
-                            control.buffer.remove(segment)
-                        control.update_seqno(data_length = total_data_len)
+                        if top_segment_end_seqno <= seqno_field:
+                            if first:
+                                control.stop_timer()
+                                first = False
+                            else:                            
+                                control.update_seqno(data = top_segment[4:]) 
+                            acked_segment_count += 1
+                            control.buffer.pop(0)
+                            control.data_ack += len(top_segment[4:])
+                            
+                        else:
+                            control.dup_ack_received += 1
+                            break
+    
+                    
 
-                        if control.buffer:
-                            control.update_seqno(data = control.buffer[0][4:])
-                            control.start_timer()
-                    else:
-                        # duplicate ACK
-                        control.dup_ack_received += 1
+                    # Restart the timer if there are still segments in the buffer
+                    if control.buffer:
+                        control.start_timer()
 
                 elif control.get_state() == "CLOSING":
 
