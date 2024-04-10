@@ -42,8 +42,8 @@ class Control:
         self.state = "CLOSED"
         self.curr_seqno = 0 # track the ACK that is supposed to be received from the receiver
         self.max_win = max_win
-        # self.init_seqno = 63000
-        self.init_seqno = utils.gen_random()
+        self.init_seqno = 63000
+        #self.init_seqno = utils.gen_random()
         # self.init_seqno = 2 ** 16-5 # purely testing
         self.buffer = []
         self.past_ack = []
