@@ -125,7 +125,7 @@ def receive(control):
                     removable = []
                     for segment in control.buffer:
                         if int.from_bytes(segment[2:4],byteorder='big') == control.in_order_seqno:
-                            print(f"seq# {int.from_bytes(segment[2:4],byteorder='big')} content added with ack {ack_seqno_num}")
+                            print(f"seq# {int.from_bytes(segment[2:4],byteorder='big')} content added with ack {ack_seqno_num} LEN {len(segment[4:])}")
                             control.received_data += segment[4:].decode('utf-8') 
                             control.in_order_seqno = control.update_seq_num(control.in_order_seqno,segment[4:]) # !!!!
                             # Check for Duplicates

@@ -46,9 +46,13 @@ class Control:
         #self.init_seqno = utils.gen_random()
         # self.init_seqno = 2 ** 16-5 # purely testing
         self.buffer = []
+        # self.buffer_ack = [] # require ACK for each 
         self.past_ack = []
         self.timer = None
         self.start_time = None
+
+        self.finish_sent = False
+        # self.finish_receive = False
 
         self.dup_count = 0
         # Log data
@@ -156,7 +160,7 @@ def receive(
                 type_segment=type_field,
                 seq_no=seqno_field,
                 number_of_bytes=len(buf)-4)
-            
+
             if type_field == Constant.ACK:
                 if control.get_state() == "SYN_SENT":
                 # transit state
@@ -173,7 +177,8 @@ def receive(
                     control.is_alive = False
 
                 elif control.get_state() == "ESTABLISHED":
-                    print(f"-----len ack {len(control.past_ack)} buf len {len(control.buffer)}------")
+                    # print(f"-----len ack {len(control.past_ack)} buf len {len(control.buffer)}------")
+                    print(f"receive ACK seqno {seqno_field} at state w/ buf {len(control.buffer)}")
                     control.add_ack_buffer(seqno_field)
 
                     acked_segment_count = 0
@@ -184,13 +189,16 @@ def receive(
                         top_segment = control.buffer[0]
                         top_segment_seqno = int.from_bytes(top_segment[2:4], byteorder="big")
                         top_segment_end_seqno = (top_segment_seqno + len(top_segment[4:])) % Constant.MAX_SEQ
-
+                        print(f"---top seg end seqno {top_segment_end_seqno} receive seqno {seqno_field}---")
                         if top_segment_end_seqno <= seqno_field:
                             if first:
                                 control.stop_timer()
+                                control.update_seqno(data = top_segment[4:]) 
+                                print(f"    after match first, new crr seqno {control.curr_seqno}")
                                 first = False
                             else:                            
                                 control.update_seqno(data = top_segment[4:]) 
+                                print(f"    after match, new crr seqno {control.curr_seqno}")
                             acked_segment_count += 1
                             control.buffer.pop(0)
                             control.data_ack += len(top_segment[4:])
@@ -198,32 +206,11 @@ def receive(
                         else:
                             control.dup_ack_received += 1
                             break
-    
                     
-
+                
                     # Restart the timer if there are still segments in the buffer
                     if control.buffer:
                         control.start_timer()
-
-                elif control.get_state() == "CLOSING":
-
-                    print(f"recevied ACK # {seqno_field} curr_seqno {control.curr_seqno} length {len(control.buffer)}")
-                    if control.buffer:
-                        
-                        top_segment = control.buffer[0]
-                        if seqno_field == control.curr_seqno:
-                            control.stop_timer()
-                            if len(control.buffer) > 1:
-                                control.start_timer()
-                                control.update_seqno(data = control.buffer[1][4:])
-                            #print(f"before remove buffer size {len(control.buffer)}")
-                            control.buffer.remove(top_segment)
-                            #print(f"before after buffer size {len(control.buffer)}")
-                            control.data_ack += len(top_segment[4:])
-                            # if control.buffer:
-                            #     #print(f"start the timer here with buffer {control.buffer}")
-                            #     control.start_timer()
-                            #     control.update_seqno(data = control.buffer[0][:4])
         except socket.timeout:
             continue
         except ConnectionRefusedError as e:
@@ -344,14 +331,15 @@ def send_data(
                 bytes_read = f.read(Constant.MAX_MSS)
                 #print(f"read segment with byte size {len(bytes_read)}")
                 if not bytes_read:
-                    if control.buffer:
-                        continue
-                        #
-                    else:
+
+                    if control.finish_sent and control.data_sent == control.data_ack:
+                        print(f"transmitting done at curr seq {control.curr_seqno}")
                         control.transit("CLOSING")
-                    # print(f"transmitting done")
                     # file transmitting is done
-                    break
+                        break
+                    else:
+                        control.finish_sent = True
+                        continue
                 # print(f"READ ABOVE")
                 type_num = Constant.DATA
                 type_field = type_num.to_bytes(2,"big")
@@ -388,7 +376,7 @@ def send_data(
                 if not control.buffer:
                     control.start_timer()
                     #print(f"Update_seqno")
-                    control.update_seqno(bytes_read)
+                    # control.update_seqno(bytes_read)
                 '''
                 Distinction required, on whether segment is first in buffer
                 or others in buffer
@@ -586,28 +574,3 @@ if __name__ == "__main__":
         print("Shut down complete.")
 
         sys.exit(0)
-'''
-1. The sender should first open a UDP socket on sender_port and initiate a two-way
-handshake (SYN, ACK) for the connection establishment. The sender sends a SYN segment, and
-the receiver responds with an ACK. This is different to the three-way handshake implemented by
-TCP. If the ACK is not received before a timeout (rto msec), the sender should retransmit the
-SYN.
-
-FLP: probabiility of DATA SYN or FIN created by sender being dropped
-RLP: Determine prob of an ACK in reverse direction from the sender being dropped
-
-python3 sender.py 49974 59974 ../sample_txt/random1.txt 1000 1000 0 0
-
-USE WIRESHARK TO TEST
-'''
-
-'''
-[1000 2000 3000] sequence number resets at 50.
-1000 dropped, 2000 goes through,
-ACK 50
-[]
-ACK < first packets seqno+length:
-- Duplicate: xxx
-ACK > first packets seqno+length:
-- Cumulative Ack: xxx
-'''
