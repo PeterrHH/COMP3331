@@ -2,7 +2,7 @@ import random
 import utils.Constant as Constant
 
 def gen_random():
-    return random.randint(0, 2**16)
+    return random.randint(0, 2**16-1)
 
 '''
 Check if the segment matches the seq# from ACK received

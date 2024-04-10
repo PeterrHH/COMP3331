@@ -21,3 +21,9 @@ SEQNO_REVERSE_MAP = {
     2:'SYN',
     3:'FIN'
 }
+
+
+# Flags for ACK CHECK
+MATCH = 0
+DUP_ACK = 1
+CUM_ACK = 2

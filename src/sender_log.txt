@@ -1,27 +1,28 @@
-snd 0 SYN 27384 0
-rcv 12.16 ACK 27385 0
-snd 31.4 DATA 27385 1000
-drp 31.68 DATA 28385 1000
-rcv 44.26 ACK 28385 0
-snd 88.46 DATA 29385 1000
-rcv 101.37 ACK 28385 0
-snd 1082.3 DATA 28385 1000
-rcv 1163.7 ACK 30385 0
-snd 1188.67 DATA 30385 1000
-snd 1190.29 DATA 31385 1000
-rcv 1214.37 ACK 31385 0
-snd 1270.25 DATA 32385 1000
-rcv 1270.29 ACK 32385 0
-rcv 1301.37 ACK 33385 0
-snd 1301.4 DATA 33385 700
-rcv 1352.03 ACK 34085 0
-snd 1401.14 FIN 34085 0
-rcv 1401.43 ACK 34086 0
+snd 0 SYN 18842 0
+rcv 12.63 ACK 18843 0
+snd 44.91 DATA 18843 1000
+drp 45.41 DATA 19843 1000
+rcv 45.56 ACK 19843 0
+snd 45.62 DATA 20843 1000
+snd 46.09 DATA 21843 1000
+rcv 46.22 ACK 19843 0
+snd 46.33 DATA 22843 1000
+drp 46.55 ACK 19843 0
+snd 46.61 DATA 23843 1000
+rcv 46.93 ACK 19843 0
+drp 46.9 DATA 24843 700
+rcv 47.13 ACK 19843 0
+snd 1050.97 DATA 19843 1000
+rcv 1052.58 ACK 24843 0
+snd 2056.76 DATA 24843 700
+rcv 2057.99 ACK 25543 0
+snd 2058.35 FIN 25543 0
+rcv 2058.56 ACK 25544 0
 
 Original data sent:        6700
 Original data acked:       6700
 Original segments sent:    7
-Retransmitted segments:    1
-Dup acks received:         1
-Data segments dropped:     1
-Ack segments dropped:      0
+Retransmitted segments:    2
+Dup acks received:         3
+Data segments dropped:     2
+Ack segments dropped:      1

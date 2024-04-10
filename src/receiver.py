@@ -58,6 +58,11 @@ class Control:
         else:
             self.state =  state
 
+    # def add_to_seqno(self,data):
+    #     self.in_order_seqno += data
+    #     if self.in_order_seqno >= Constant.MAX_SEQ:
+    #         self.in_order_seqno -= -= Constant.MAX_SEQ
+
 def receive(control):
     # if self.state != "CLOSED":
     #     sys.exit(f"Receiver Handshaking when not CLOSED state is {self.state}")
@@ -80,7 +85,7 @@ def receive(control):
                 time= time.time(),
                 type_segment=type_field,
                 seq_no= seqno_num,
-                number_of_bytes=len(buf)-4
+                number_of_bytes=len(buf[4:])
             )
 
 
@@ -111,19 +116,25 @@ def receive(control):
                 # print(f"data received type is {type(data_received)}")
                 if seqno_num == control.in_order_seqno:
                     # in order directly add to data read
-                    print(f"seq# {seqno_num} content added")
+                    print(f"seq# {seqno_num} content added w/ len {len(data_received)} in order seq {control.in_order_seqno}")
                     control.received_data += data_received
                     control.segment_received += 1
                     control.in_order_seqno = control.update_seq_num(control.in_order_seqno,data_received)
                     # check that with this data being read, if any previous gotten data
                     # can be put into the read fiel
+                    removable = []
                     for segment in control.buffer:
                         if int.from_bytes(segment[2:4],byteorder='big') == control.in_order_seqno:
                             print(f"seq# {int.from_bytes(segment[2:4],byteorder='big')} content added with ack {ack_seqno_num}")
-                            control.received_data += data_received
-                            control.in_order_seqno += len(data_received)
+                            control.received_data += segment[4:].decode('utf-8') 
+                            control.in_order_seqno = control.update_seq_num(control.in_order_seqno,segment[4:]) # !!!!
                             # Check for Duplicates
                             control.segment_received += 1
+                            removable.append(segment)
+                    
+                    for segment in removable:
+                        control.buffer.remove(segment)
+
              
 
                 else:

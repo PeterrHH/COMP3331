@@ -99,12 +99,24 @@ class Control:
     
     def get_send_seqno(self,data):
         total_length = 0
-        for segment in self.buffer[1:]:
-            total_length += len(segment[4:])
-        return_length = self.curr_seqno + total_length
+        if self.buffer:
+            seq_no_prev = int.from_bytes(self.buffer[-1][2:4],byteorder="big")
+            return_length = seq_no_prev + len(self.buffer[-1][4:])
+        else:
+            return_length = self.curr_seqno
+        # for segment in self.buffer[1:]:
+        #     total_length += len(segment[4:])
+        # return_length = self.curr_seqno + total_length
         while return_length >= Constant.MAX_SEQ:
             return_length -= Constant.MAX_SEQ
         return return_length
+
+    # def check_ack_seqno(receive_seqno):
+    #     if receive_seqno = self.curr_seqno:
+    #         return Constant.MATCH
+        
+        
+
 
 def receive(
         control,rlp):
@@ -140,7 +152,7 @@ def receive(
                 # transit state
                     control.transit("ESTABLISHED")
                     control.stop_timer()
-                    assert seqno_field == control.curr_seqno
+                    #assert seqno_field == control.curr_seqno
 
                 # Starting sendng file
                 elif control.get_state() == "FIN_WAIT":
@@ -151,6 +163,7 @@ def receive(
                     control.is_alive = False
 
                 elif control.get_state() == "ESTABLISHED":
+                    #print(f"in establish size bufffer is {len(control.buffer)}")
                     top_segment = control.buffer[0]
                     print(f"recevied ACK # {seqno_field} curr_seqno {control.curr_seqno}")
                     if seqno_field == control.curr_seqno:
@@ -159,10 +172,10 @@ def receive(
                         if len(control.buffer) > 1:
                             control.update_seqno(data = control.buffer[1][4:])
                             control.start_timer()
-
+                        print(f"ACKING DATA {len(top_segment[4:])}")
                         control.data_ack += len(top_segment[4:])
                         control.buffer.remove(top_segment)
-                        print(f"REMOVING")
+                        # print(f"REMOVING")
                     elif seqno_field > control.curr_seqno:
                         # Cumulative ACK
                         # for segment in control.buffer:
@@ -170,17 +183,25 @@ def receive(
                         #     control.buffer.remove(segment)
                         #     if 
                         #     control.start_timer()
+                        print(f"    CUMULATIVE ACK POSITION with")
                         control.stop_timer()
                         total_data_len = 0
                         removable = []
+                        first_data_len = 0
                         for idx,segment in enumerate(control.buffer):
                             curr_segment_seqno = int.from_bytes(segment[2:4],byteorder="big")
                             curr_segment_length = len(segment[4:])
                             removable.append(segment)
+
                             if idx > 0:
                                 total_data_len += curr_segment_length
+                            else:
+                                first_data_len = curr_segment_length
+                            print(f"    total data len {total_data_len} sum {curr_segment_seqno + curr_segment_length}")
                             if curr_segment_seqno + curr_segment_length == seqno_field:
-                                control.data_ack += (curr_segment_length+ len(control.buffer[0][4:]))
+                                print(f"DUP ACKING DATA {(curr_segment_length+ len(control.buffer[0][4:]))}")
+                                # control.data_ack += (curr_segment_length+ len(control.buffer[0][4:]))
+                                control.data_ack += total_data_len + first_data_len
                                 break
                         
                         for segment in removable:
@@ -190,18 +211,11 @@ def receive(
                         if control.buffer:
                             control.update_seqno(data = control.buffer[0][4:])
                             control.start_timer()
-                        
-
-                        pass
-
-                        
-
                     else:
                         # duplicate ACK
                         control.dup_ack_received += 1
 
                 elif control.get_state() == "CLOSING":
-                    print(f"RECEIVED IN CLOSING")
 
                     print(f"recevied ACK # {seqno_field} curr_seqno {control.curr_seqno} length {len(control.buffer)}")
                     if control.buffer:
@@ -212,9 +226,9 @@ def receive(
                             if len(control.buffer) > 1:
                                 control.start_timer()
                                 control.update_seqno(data = control.buffer[1][4:])
-                            print(f"before remove buffer size {len(control.buffer)}")
+                            #print(f"before remove buffer size {len(control.buffer)}")
                             control.buffer.remove(top_segment)
-                            print(f"before after buffer size {len(control.buffer)}")
+                            #print(f"before after buffer size {len(control.buffer)}")
                             control.data_ack += len(top_segment[4:])
                             # if control.buffer:
                             #     #print(f"start the timer here with buffer {control.buffer}")
@@ -234,7 +248,7 @@ def receive(
             print("Server stopped by user")
             break
         except Exception as e:
-            print(f"RECEIVE EXCEPTION as")
+            print(f"!!!!!!! RECEIVE EXCEPTION as !!!!!!!!!!!")
             print(e)
 
 def setup_socket(
@@ -332,15 +346,20 @@ def send_data(
                 bytes_read = f.read(Constant.MAX_MSS)
                 #print(f"read segment with byte size {len(bytes_read)}")
                 if not bytes_read:
-                    control.transit("CLOSING")
-                    print(f"transmitting done")
+                    if control.buffer:
+                        continue
+                        #
+                    else:
+                        control.transit("CLOSING")
+                    # print(f"transmitting done")
                     # file transmitting is done
                     break
                 # print(f"READ ABOVE")
                 type_num = Constant.DATA
                 type_field = type_num.to_bytes(2,"big")
-                print(f"sending with {control.curr_seqno} with len {len(bytes_read)}")
                 send_seqno = control.get_send_seqno(bytes_read)
+                print(f"curr seqno {control.curr_seqno} send seqno {send_seqno} with len {len(bytes_read)}")
+            
                 seqno_field = send_seqno.to_bytes(2,"big")
                 segment = type_field+seqno_field+bytes_read
                                 # control.curr_seqno += len(bytes_read)
@@ -352,7 +371,7 @@ def send_data(
                         flag = "drp",
                         time = time.time(),
                         type_segment=type_num,
-                        seq_no=control.curr_seqno,
+                        seq_no=send_seqno,
                         number_of_bytes=len(bytes_read))
                     control.data_segment_dropped += 1
                 else:
@@ -361,7 +380,7 @@ def send_data(
                         flag = "snd",
                         time = time.time(),
                         type_segment=type_num,
-                        seq_no=control.curr_seqno,
+                        seq_no=send_seqno,
                         number_of_bytes=len(bytes_read))
 
 
