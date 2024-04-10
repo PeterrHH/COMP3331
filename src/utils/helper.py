@@ -25,3 +25,12 @@ def check_seqno_match(segment, seqno_field):
         return True
     else:
         return False
+
+
+def get_segment_ack_num(segment):
+    segment_seqno = int.from_bytes(segment[2:4],byteorder='big')
+    segment_len = len(segment[4:])
+    ack_num = segment_seqno + segment_len
+    if ack_num > Constant.MAX_SEQ:
+        ack_num -= Constant.MAX_SEQ
+    return ack_num

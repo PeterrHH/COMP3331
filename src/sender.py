@@ -42,8 +42,8 @@ class Control:
         self.state = "CLOSED"
         self.curr_seqno = 0 # track the ACK that is supposed to be received from the receiver
         self.max_win = max_win
-        self.init_seqno = 63000
-        #self.init_seqno = utils.gen_random()
+        # self.init_seqno = 63000
+        self.init_seqno = utils.gen_random()
         # self.init_seqno = 2 ** 16-5 # purely testing
         self.buffer = []
         # self.buffer_ack = [] # require ACK for each 
@@ -75,7 +75,7 @@ class Control:
 
     
     def check_buffer_full(self):
-        total_len = sum(len(segment[4:]) for segment in self.buffer)
+        total_len = sum(len(segment[0][4:]) for segment in self.buffer)
         return total_len >= self.max_win
     
     def start_timer(self):
@@ -114,8 +114,8 @@ class Control:
     def get_send_seqno(self,data):
         total_length = 0
         if self.buffer:
-            seq_no_prev = int.from_bytes(self.buffer[-1][2:4],byteorder="big")
-            return_length = seq_no_prev + len(self.buffer[-1][4:])
+            seq_no_prev = int.from_bytes(self.buffer[-1][0][2:4],byteorder="big")
+            return_length = seq_no_prev + len(self.buffer[-1][0][4:])
         else:
             return_length = self.curr_seqno
         # for segment in self.buffer[1:]:
@@ -184,28 +184,50 @@ def receive(
                     acked_segment_count = 0
                     acked_data_size = 0
                     first = True
-                    # Remove all segments from the buffer that are acknowledged by the received ACK
-                    while control.buffer:
-                        top_segment = control.buffer[0]
-                        top_segment_seqno = int.from_bytes(top_segment[2:4], byteorder="big")
-                        top_segment_end_seqno = (top_segment_seqno + len(top_segment[4:])) % Constant.MAX_SEQ
-                        print(f"---top seg end seqno {top_segment_end_seqno} receive seqno {seqno_field}---")
-                        if top_segment_end_seqno <= seqno_field:
+
+                    found = any(seqno_field == element[1] for element in control.buffer)
+                    print(f"---------NOT FOUND {[element[1] for element in control.buffer]} with seqno_field {seqno_field}---------")
+                    removable = []
+                    if not found:
+                        # Duplicate
+                        print("DUPLICATE")
+                        control.dup_ack_received += 1
+                    else:
+                        # Remove all segments from the buffer that are acknowledged by the received ACK
+                        while control.buffer:
+                            top_segment = control.buffer[0][0]
+                            top_segment_seqno = int.from_bytes(top_segment[2:4], byteorder="big")
+                            top_segment_end_seqno = (top_segment_seqno + len(top_segment[4:])) % Constant.MAX_SEQ
+                            print(f"---top seg end seqno {top_segment_end_seqno} receive seqno {seqno_field}---")
+                            removable.append(top_segment)
+                            
                             if first:
                                 control.stop_timer()
-                                control.update_seqno(data = top_segment[4:]) 
-                                print(f"    after match first, new crr seqno {control.curr_seqno}")
                                 first = False
-                            else:                            
-                                control.update_seqno(data = top_segment[4:]) 
-                                print(f"    after match, new crr seqno {control.curr_seqno}")
+                            control.update_seqno(data = top_segment[4:]) 
                             acked_segment_count += 1
                             control.buffer.pop(0)
                             control.data_ack += len(top_segment[4:])
+                            if top_segment_end_seqno == seqno_field:
+                                break
+                            # if top_segment_end_seqno <= seqno_field:
+                            #     if first:
+                            #         control.stop_timer()
+                            #         control.update_seqno(data = top_segment[4:]) 
+                            #         print(f"    after match first, new crr seqno {control.curr_seqno}")
+                            #         first = False
+                            #     else:                            
+                            #         control.update_seqno(data = top_segment[4:]) 
+                            #         print(f"    after match, new crr seqno {control.curr_seqno}")
+                            #     acked_segment_count += 1
+                            #     control.buffer.pop(0)
+                            #     control.data_ack += len(top_segment[4:])
+                            # else:
+                            #     break
                             
-                        else:
-                            control.dup_ack_received += 1
-                            break
+                        # else:
+                        #     control.dup_ack_received += 1
+                        #     break
                     
                 
                     # Restart the timer if there are still segments in the buffer
@@ -268,6 +290,8 @@ if no ACK for rto amount of time
 resent the SYN
 
 '''
+
+
 
 def send_setup(
         control,flp):
@@ -377,11 +401,12 @@ def send_data(
                     control.start_timer()
                     #print(f"Update_seqno")
                     # control.update_seqno(bytes_read)
+                required_ack = utils.get_segment_ack_num(segment)
                 '''
                 Distinction required, on whether segment is first in buffer
                 or others in buffer
                 '''
-                control.buffer.append(segment)
+                control.buffer.append((segment,required_ack))
                 # control.start_timer()
 
 
@@ -440,7 +465,7 @@ def log_data(
 
 def data_retransmit(control,flp):
     control.stop_timer()
-    poped_segment = control.buffer[0]
+    poped_segment = control.buffer[0][0]
     control.retransmit_segment += 1
     if random.random() < flp:
         # still need to be dropped
@@ -478,7 +503,6 @@ def timer_thread(
     elif control.get_state() == "CLOSING" or control.get_state() == "ESTABLISHED":
         #print(f"Resending segment buf size {len(control.buffer)} timer is {control.timer}")
         data_retransmit(control,flp)
-        # control.buffer.append(poped_segment)
     # Restart the timer if the control is still alive and in a state where ACK is expected
     if control.is_alive and control.get_state() in ["CLOSING","ESTABLISHED"]:
         control.start_timer()
