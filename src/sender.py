@@ -42,9 +42,11 @@ class Control:
         self.state = "CLOSED"
         self.curr_seqno = 0 # track the ACK that is supposed to be received from the receiver
         self.max_win = max_win
+        # self.init_seqno = 63000
         self.init_seqno = utils.gen_random()
         # self.init_seqno = 2 ** 16-5 # purely testing
         self.buffer = []
+        self.past_ack = []
         self.timer = None
         self.start_time = None
 
@@ -96,6 +98,14 @@ class Control:
         if self.curr_seqno >= Constant.MAX_SEQ:
             self.curr_seqno -= Constant.MAX_SEQ
         #print(f"Update Seqno to {self.curr_seqno}")
+
+    def add_ack_buffer(self,ack_number):
+        if len(self.past_ack) == 3:
+            self.past_ack.pop()
+
+        self.past_ack.append(ack_number)
+        
+
     
     def get_send_seqno(self,data):
         total_length = 0
@@ -163,7 +173,9 @@ def receive(
                     control.is_alive = False
 
                 elif control.get_state() == "ESTABLISHED":
-                    #print(f"in establish size bufffer is {len(control.buffer)}")
+                    print(f"-----len ack {len(control.past_ack)} buf len {len(control.buffer)}------")
+                    control.add_ack_buffer(seqno_field)
+
                     top_segment = control.buffer[0]
                     print(f"recevied ACK # {seqno_field} curr_seqno {control.curr_seqno}")
                     if seqno_field == control.curr_seqno:
@@ -178,11 +190,6 @@ def receive(
                         # print(f"REMOVING")
                     elif seqno_field > control.curr_seqno:
                         # Cumulative ACK
-                        # for segment in control.buffer:
-                        #     control.stop_timer()
-                        #     control.buffer.remove(segment)
-                        #     if 
-                        #     control.start_timer()
                         print(f"    CUMULATIVE ACK POSITION with")
                         control.stop_timer()
                         total_data_len = 0
@@ -341,6 +348,14 @@ def send_data(
     #print(f"file_name is {file_name}")
     with open(file_name,"rb") as f:
         while True:
+            if len(control.past_ack) == 3:
+                if control.past_ack[1:] == control.past_ack[:1]:
+                    #FAST RETRANSMIT
+                    print(f"FAST RETRANSMIT with ACK {control.past_ack[1]}")
+                    data_retransmit(control,flp)
+                    control.start_timer()
+                    pass
+                    
             if not control.check_buffer_full():
                 #print(f"buffer length { sum(len(segment[4:]) for segment in control.buffer)} max_win {control.max_win}")
                 bytes_read = f.read(Constant.MAX_MSS)
@@ -452,6 +467,32 @@ def log_data(
     with open(file_name, "a") as log_file:
         log_file.write(log_string)
 
+def data_retransmit(control,flp):
+    control.stop_timer()
+    poped_segment = control.buffer[0]
+    control.retransmit_segment += 1
+    if random.random() < flp:
+        # still need to be dropped
+        log_data(control,
+            flag = "drp",
+            time = time.time(),
+            type_segment=int.from_bytes(poped_segment[:2],byteorder='big'),
+            seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
+            number_of_bytes=len(poped_segment[4:]))
+        control.data_segment_dropped += 1
+        
+        pass
+    else:
+        log_data(control,
+            flag = "snd",
+            time = time.time(),
+            type_segment=int.from_bytes(poped_segment[:2],byteorder='big'),
+            seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
+            number_of_bytes=len(poped_segment[4:]))
+
+        print(f"Retransmit for seq {int.from_bytes(poped_segment[2:4],byteorder='big')}")
+        control.socket.send(poped_segment)
+        
 def timer_thread(
         control,flp):
     # Loook at different cases. 
@@ -465,30 +506,7 @@ def timer_thread(
         # send_finish(control,flp)
     elif control.get_state() == "CLOSING" or control.get_state() == "ESTABLISHED":
         #print(f"Resending segment buf size {len(control.buffer)} timer is {control.timer}")
-        control.stop_timer()
-        poped_segment = control.buffer[0]
-        control.retransmit_segment += 1
-        if random.random() < flp:
-            # still need to be dropped
-            log_data(control,
-                flag = "drp",
-                time = time.time(),
-                type_segment=int.from_bytes(poped_segment[:2],byteorder='big'),
-                seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
-                number_of_bytes=len(poped_segment[4:]))
-            control.data_segment_dropped += 1
-            
-            pass
-        else:
-            log_data(control,
-                flag = "snd",
-                time = time.time(),
-                type_segment=int.from_bytes(poped_segment[:2],byteorder='big'),
-                seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
-                number_of_bytes=len(poped_segment[4:]))
-
-            print(f"Retransmit for seq {int.from_bytes(poped_segment[2:4],byteorder='big')}")
-            control.socket.send(poped_segment)
+        data_retransmit(control,flp)
         # control.buffer.append(poped_segment)
     # Restart the timer if the control is still alive and in a state where ACK is expected
     if control.is_alive and control.get_state() in ["CLOSING","ESTABLISHED"]:
@@ -601,7 +619,12 @@ USE WIRESHARK TO TEST
 '''
 
 '''
-In slidding window, sender and receiver thread sometimes work a bit arbitrarily,
-packet removes, MAKE IT TRANSFER THE NEXT PACKET
-
+[1000 2000 3000] sequence number resets at 50.
+1000 dropped, 2000 goes through,
+ACK 50
+[]
+ACK < first packets seqno+length:
+- Duplicate: xxx
+ACK > first packets seqno+length:
+- Cumulative Ack: xxx
 '''
