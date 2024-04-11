@@ -10,10 +10,12 @@ class Control:
     def __init__(self,
                  receiver_port:int,
                  sender_port:int,
-                 socket:socket.socket) -> None:
+                 socket:socket.socket,
+                 max_win: int) -> None:
         self.receiver_port = receiver_port
         self.sender_port =sender_port
         self.socket = socket
+        self.max_win = max_win
         self.all_state = ["CLOSED","LISTEN","ESTABLISHED","TIME_WAIT"]
         self.state = "CLOSED"
         self.is_alive = True
@@ -22,6 +24,9 @@ class Control:
         self.received_data = ""
         self.in_order_seqno = None
         self.timer = None
+        self.prev_segment = []
+        self.prev_segment_max = self.max_win / 1000
+        self.first_data = False
 
         # Log data
         self.segment_received = 0
@@ -113,6 +118,13 @@ def receive(control):
             elif type_field == Constant.DATA:
 
                 data_received = buf[4:].decode('utf-8') 
+                print(f"    segment win {control.prev_segment} seqno num {seqno_num}")
+                if seqno_num in control.prev_segment:
+                    control.duplicate_received += 1
+                else:
+                    if len(control.prev_segment) == control.prev_segment_max:
+                        control.prev_segment.pop(0)
+                    control.prev_segment.append(seqno_num)
                 # print(f"data received type is {type(data_received)}")
                 if seqno_num == control.in_order_seqno:
                     # in order directly add to data read
@@ -140,9 +152,16 @@ def receive(control):
                 else:
                     # No inorder, previous packets are lost
                     # the ACK NUMBER SHOULD BE FOR PREVIOUS 
+                    '''
+
+                    Need to check if it is Duplicate Segment
+                    BUffer are (segment, sequence number)
+                    '''
                     control.buffer.append(buf)
                     control.buffer.sort(key=lambda x: int.from_bytes(x[2:4], byteorder='big'))
-                    control.duplicate_ack += 1
+                    if control.first_data:
+                        print(f"DUP ACK FOR {control.in_order_seqno}")
+                        control.duplicate_ack += 1
 
                 length_data = len(data_received)
                 ack_seqno_num= control.in_order_seqno
@@ -157,6 +176,8 @@ def receive(control):
                     type_segment=ack_type_num,
                     seq_no=ack_seqno_num,
                     number_of_bytes=0)
+                if not control.first_data:
+                    control.first_data = True
             elif type_field == Constant.FIN:
                 # When receiving FIN, move to TIME_WAIT state
                 # wait for two maximum segment lifetime (MSLs). One MSL is 1s.
@@ -266,7 +287,8 @@ if __name__ == "__main__":
     control = Control(
         receiver_port= receiver_port,
         sender_port=sender_port,
-        socket=sock
+        socket=sock,
+        max_win = max_win,
     )
 
     try:
@@ -325,4 +347,11 @@ Sender
 [2,3,4]
 
 [3,4,5]
+
+ WOULD IT BE GOOD DESIGN TO CHECK Is
+
+ S 0 1000-D 2000 3000 
+ R 0 4000 
+ [1000 3000 4000] receive 4000 <- Cumulative ACK
+ [1000, 3000]
 '''

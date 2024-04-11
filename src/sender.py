@@ -54,6 +54,8 @@ class Control:
         self.finish_sent = False
         # self.finish_receive = False
 
+        self.first_receive = False
+
         self.dup_count = 0
         # Log data
         self.data_sent = 0
@@ -191,7 +193,8 @@ def receive(
                     if not found:
                         # Duplicate
                         print("DUPLICATE")
-                        control.dup_ack_received += 1
+                        if control.first_receive:
+                            control.dup_ack_received += 1
                     else:
                         # Remove all segments from the buffer that are acknowledged by the received ACK
                         while control.buffer:
@@ -210,29 +213,12 @@ def receive(
                             control.data_ack += len(top_segment[4:])
                             if top_segment_end_seqno == seqno_field:
                                 break
-                            # if top_segment_end_seqno <= seqno_field:
-                            #     if first:
-                            #         control.stop_timer()
-                            #         control.update_seqno(data = top_segment[4:]) 
-                            #         print(f"    after match first, new crr seqno {control.curr_seqno}")
-                            #         first = False
-                            #     else:                            
-                            #         control.update_seqno(data = top_segment[4:]) 
-                            #         print(f"    after match, new crr seqno {control.curr_seqno}")
-                            #     acked_segment_count += 1
-                            #     control.buffer.pop(0)
-                            #     control.data_ack += len(top_segment[4:])
-                            # else:
-                            #     break
-                            
-                        # else:
-                        #     control.dup_ack_received += 1
-                        #     break
-                    
                 
                     # Restart the timer if there are still segments in the buffer
                     if control.buffer:
                         control.start_timer()
+                    
+                    control.first_receive = True
         except socket.timeout:
             continue
         except ConnectionRefusedError as e:
