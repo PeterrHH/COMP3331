@@ -599,3 +599,6 @@ if __name__ == "__main__":
         print("Shut down complete.")
 
         sys.exit(0)
+'''
+python3 sender.py 49974 59974 ../sample_txt/random1.txt 1000 1000 0 0
+'''
