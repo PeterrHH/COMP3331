@@ -42,11 +42,9 @@ class Control:
         self.state = "CLOSED"
         self.curr_seqno = 0 # track the ACK that is supposed to be received from the receiver
         self.max_win = max_win
-        # self.init_seqno = 63000
         self.init_seqno = utils.gen_random()
-        # self.init_seqno = 2 ** 16-5 # purely testing
         self.buffer = []
-        # self.buffer_ack = [] # require ACK for each 
+ 
         self.past_ack = []
         self.timer = None
         self.start_time = None
@@ -81,14 +79,14 @@ class Control:
         return total_len >= self.max_win
     
     def start_timer(self):
-        #print(f"START TIMER")
+
         if self.timer is not None:
             self.timer.cancel()
         self.timer = threading.Timer(self.rto, timer_thread, args=(self,flp,))
         self.timer.start()
     
     def stop_timer(self):
-        #print(f"STOP TIMER")
+
         if self.timer is not None:
             self.timer.cancel()
             self.timer = None
@@ -188,11 +186,10 @@ def receive(
                     first = True
 
                     found = any(seqno_field == element[1] for element in control.buffer)
-                    print(f"---------NOT FOUND {[element[1] for element in control.buffer]} with seqno_field {seqno_field}---------")
+                    #print(f"---------NOT FOUND {[element[1] for element in control.buffer]} with seqno_field {seqno_field}---------")
                     removable = []
                     if not found:
                         # Duplicate
-                        print("DUPLICATE")
                         if control.first_receive:
                             control.dup_ack_received += 1
                     else:
@@ -201,7 +198,7 @@ def receive(
                             top_segment = control.buffer[0][0]
                             top_segment_seqno = int.from_bytes(top_segment[2:4], byteorder="big")
                             top_segment_end_seqno = (top_segment_seqno + len(top_segment[4:])) % Constant.MAX_SEQ
-                            print(f"---top seg end seqno {top_segment_end_seqno} receive seqno {seqno_field}---")
+                            #print(f"---top seg end seqno {top_segment_end_seqno} receive seqno {seqno_field}---")
                             removable.append(top_segment)
                             
                             if first:
@@ -329,12 +326,13 @@ def send_data(
     with open(file_name,"rb") as f:
         while True:
             if len(control.past_ack) == 3:
-                
-                if control.past_ack[1:] == control.past_ack[:1]:
+
+                if control.past_ack[0] == control.past_ack[1] == control.past_ack[2]:
                     #FAST RETRANSMIT
-                    print(f"FAST RETRANSMIT with ACK {control.past_ack}")
+                    print(f"----FAST RETRANSMIT with ACK {control.past_ack}----")
                     data_retransmit(control,flp)
                     control.start_timer()
+                    control.past_ack = []
                     pass
                     
             if not control.check_buffer_full():
@@ -355,7 +353,7 @@ def send_data(
                 type_num = Constant.DATA
                 type_field = type_num.to_bytes(2,"big")
                 send_seqno = control.get_send_seqno(bytes_read)
-                print(f"curr seqno {control.curr_seqno} send seqno {send_seqno} with len {len(bytes_read)}")
+            
             
                 seqno_field = send_seqno.to_bytes(2,"big")
                 segment = type_field+seqno_field+bytes_read
@@ -363,7 +361,6 @@ def send_data(
                 # if control.curr_seqno >= Constant.MAX_SEQ:
                 #     control.curr_seqno -= Constant.MAX_SEQ
                 if random.random() < flp:
-                    print(f"Data seqno {control.curr_seqno} DROPPED")
                     log_data(control,
                         flag = "drp",
                         time = time.time(),
@@ -487,11 +484,11 @@ def timer_thread(
         # print("Timeout: Resending FIN")
         control.stop_timer()
         # send_finish(control,flp)
-    elif control.get_state() == "CLOSING" or control.get_state() == "ESTABLISHED":
+    elif control.get_state() == "ESTABLISHED":
         #print(f"Resending segment buf size {len(control.buffer)} timer is {control.timer}")
         data_retransmit(control,flp)
     # Restart the timer if the control is still alive and in a state where ACK is expected
-    if control.is_alive and control.get_state() in ["CLOSING","ESTABLISHED"]:
+    if control.is_alive and control.get_state() in ["ESTABLISHED"]:
         control.start_timer()
 '''
 self.data_sent = 0
@@ -560,7 +557,6 @@ if __name__ == "__main__":
             elif control.get_state() == "CLOSING" or control.get_state() == "FIN_WAIT":
                 #print(f"control buffer length {control.buffer} and time {control.timer} state is {control.get_state()}")
                 if not control.buffer:
-
                     #send_finish(control,0.6)# For testing purporses
                     send_finish(control,flp) 
                     control.start_timer()

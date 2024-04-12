@@ -3,9 +3,8 @@
 #     file_content = f.read()
 #     total_length = len(file_content)
 #     print(f"Total length of the file: {total_length} bytes")
-
-a = ["A","B","C","D","E"]
-
-for idx,value in enumerate(a):
-    a.remove(value)
-    print(f"idx = {idx} corresponding {a[idx]} a is {a}")
+a = ["A","A","A"]
+if a[0] == a[1] == a[2]:
+    print("True")
+else:
+    print("False")

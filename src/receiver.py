@@ -311,47 +311,4 @@ if __name__ == "__main__":
         print("Receiver shut down complete.")
         sys.exit(0)
 
-    '''
-    At thsi stage, established connection. If received any more, and in eestalished state
-    we ignore it 
-
-    if receive FIN
-        resent ACK
-        check if first time:
-            true: Set a 2second timer
-            false: DO nothing
-
-    times up break and finish
-    
-
-    python3 receiver.py 59974 49974 destination.txt 1000
-    '''
-
-    # control.socket.close()  # Close the socket
-
-    # print("Shut down complete.")
-
-    # sys.exit(0)
-
-'''
-[1,2,3]
-Recevier received [1]
-3, ACK 1 # ACK 3
-
-'''
-
-'''
-Sender 
-[2,3,4]
-
-[2,3,4]
-
-[3,4,5]
-
- WOULD IT BE GOOD DESIGN TO CHECK Is
-
- S 0 1000-D 2000 3000 
- R 0 4000 
- [1000 3000 4000] receive 4000 <- Cumulative ACK
- [1000, 3000]
-'''
+  
