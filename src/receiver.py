@@ -37,14 +37,12 @@ class Control:
         return self.in_order_seqno == seqno
     
     def start_timer(self):
-        print(f"START TIMER")
         if self.timer is not None:
             self.timer.cancel()
         self.timer = threading.Timer(Constant.MSL*2,timer_thread,args=(self,))
         self.timer.start()
     
     def stop_timer(self):
-        print(f"STOP TIMER")
         if self.timer is not None:
             self.timer.cancel()
             self.timer = None
@@ -63,22 +61,14 @@ class Control:
         else:
             self.state =  state
 
-    # def add_to_seqno(self,data):
-    #     self.in_order_seqno += data
-    #     if self.in_order_seqno >= Constant.MAX_SEQ:
-    #         self.in_order_seqno -= -= Constant.MAX_SEQ
 
 def receive(control):
-    # if self.state != "CLOSED":
-    #     sys.exit(f"Receiver Handshaking when not CLOSED state is {self.state}")
     control.transit("LISTEN")
     while control.is_alive:
 
         try:
 
             buf,addr = control.socket.recvfrom(2048)
-            # print(buf)
-            # print("---------------")
             if control.timer:
                 control.stop_timer()
             type_field = int.from_bytes(buf[:2],byteorder='big')
@@ -118,26 +108,23 @@ def receive(control):
             elif type_field == Constant.DATA:
 
                 data_received = buf[4:].decode('utf-8') 
-                print(f"    segment win {control.prev_segment} seqno num {seqno_num}")
                 if seqno_num in control.prev_segment:
                     control.duplicate_received += 1
                 else:
                     if len(control.prev_segment) == control.prev_segment_max:
                         control.prev_segment.pop(0)
                     control.prev_segment.append(seqno_num)
-                # print(f"data received type is {type(data_received)}")
+                # if in order directly add to data read
                 if seqno_num == control.in_order_seqno:
-                    # in order directly add to data read
-                    print(f"seq# {seqno_num} content added w/ len {len(data_received)} in order seq {control.in_order_seqno}")
+
                     control.received_data += data_received
                     control.segment_received += 1
                     control.in_order_seqno = control.update_seq_num(control.in_order_seqno,data_received)
                     # check that with this data being read, if any previous gotten data
-                    # can be put into the read fiel
+                    # can be put into the read file
                     removable = []
                     for segment in control.buffer:
                         if int.from_bytes(segment[2:4],byteorder='big') == control.in_order_seqno:
-                            print(f"seq# {int.from_bytes(segment[2:4],byteorder='big')} content added with ack {ack_seqno_num} LEN {len(segment[4:])}")
                             control.received_data += segment[4:].decode('utf-8') 
                             control.in_order_seqno = control.update_seq_num(control.in_order_seqno,segment[4:]) # !!!!
                             # Check for Duplicates
@@ -152,15 +139,9 @@ def receive(control):
                 else:
                     # No inorder, previous packets are lost
                     # the ACK NUMBER SHOULD BE FOR PREVIOUS 
-                    '''
-
-                    Need to check if it is Duplicate Segment
-                    BUffer are (segment, sequence number)
-                    '''
                     control.buffer.append(buf)
                     control.buffer.sort(key=lambda x: int.from_bytes(x[2:4], byteorder='big'))
                     if control.first_data:
-                        print(f"DUP ACK FOR {control.in_order_seqno}")
                         control.duplicate_ack += 1
 
                 length_data = len(data_received)
@@ -168,7 +149,6 @@ def receive(control):
                 ack_type_field = ack_type_num.to_bytes(2,"big")
                 ack_seqno_field = ack_seqno_num.to_bytes(2,"big")
                 ack_segment = ack_type_field + ack_seqno_field
-                #print(f"received {type_field} sent ack_segment ack_segment {int.from_bytes(ack_seqno_field,byteorder='big')}")
                 control.socket.send(ack_segment)
                 log_data(control,
                     flag = "snd",
@@ -183,7 +163,6 @@ def receive(control):
                 # wait for two maximum segment lifetime (MSLs). One MSL is 1s.
                 # Then reentering CLOSED state.
                 control.transit("TIME_WAIT")
-                # print(f"received {type_field}  sent ack_segment ack_segment {int.from_bytes(ack_seqno_field,byteorder='big')}")
                 ack_seqno_num = control.update_seq_num(seqno_num)
                 ack_type_field = ack_type_num.to_bytes(2,"big")
                 ack_seqno_field = ack_seqno_num.to_bytes(2,"big")
@@ -199,14 +178,9 @@ def receive(control):
                 '''
                 Should wait two seconds, set is_alive to False and close but it does not
                 '''
-                print(f"FOR FINWAIT send seg_no {ack_seqno_num}")
-                # time.sleep(2*Constant.MSL)
-                # self.transit("CLOSED")
-                # self.is_alive = False
 
             else:
                 pass
-            # print(f"alive is {control.is_alive.is_set()}")
         except socket.timeout:
             print(f"socket timeout")
             continue
@@ -259,7 +233,6 @@ def write_text_to_file(
 def timer_thread(control):
     control.transit("CLOSED")
     control.is_alive = False # Clear the event to signal the main thread to stop
-    #print(f"Timer thread set control to CLOSED and cleared is_alive event")
 
 def log_summary(control):
     dest_path = Constant.RECEIVER_LOG_TEXT
@@ -292,19 +265,12 @@ if __name__ == "__main__":
     )
 
     try:
-
-        # control.receive()
         receive(control)
-        # while True:
-            
-        #     buf,addr = control.socket.recvfrom(2048)
-        #     if int.from_bytes(buf[:2],byteorder='big') == Constant.SYN and control.state == "ESTABLISHED":
-        #         continue
+
     except KeyboardInterrupt:
         print("Shutting down receiver.")
         control.is_alive = False
     finally:
-        # control.stop()
         write_text_to_file(control,txt_file_received)
         log_summary(control,)
         control.socket.close()

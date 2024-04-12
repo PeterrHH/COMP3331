@@ -8,20 +8,6 @@ from dataclasses import dataclass
 import utils.Constant as Constant
 import utils
 
-'''
-
-Message format
-
---------------------------------------------------
-type 2 btyes | seqno 2 byte | Data 0 to MSS byte |
---------------------------------------------------
-MSS = 1000 bytes
-'''
-
-
-
-
-# @dataclass
 class Control:
     """Control block: parameters for the sender program."""
     def __init__(self,
@@ -166,19 +152,15 @@ def receive(
                 # transit state
                     control.transit("ESTABLISHED")
                     control.stop_timer()
-                    #assert seqno_field == control.curr_seqno
 
                 # Starting sendng file
                 elif control.get_state() == "FIN_WAIT":
                     # transit state
-                    print(f"receivedat FINWAIT with {type_field} {seqno_field}")
                     control.transit("CLOSED")
                     control.stop_timer()
                     control.is_alive = False
 
                 elif control.get_state() == "ESTABLISHED":
-                    # print(f"-----len ack {len(control.past_ack)} buf len {len(control.buffer)}------")
-                    print(f"receive ACK seqno {seqno_field} at state w/ buf {len(control.buffer)}")
                     control.add_ack_buffer(seqno_field)
 
                     acked_segment_count = 0
@@ -322,34 +304,29 @@ Not in the buffer,
 '''
 def send_data(
         control,file_name,flp):
-    #print(f"file_name is {file_name}")
     with open(file_name,"rb") as f:
         while True:
+            # if 3 past_ack and all receive, Retransmit
             if len(control.past_ack) == 3:
-
                 if control.past_ack[0] == control.past_ack[1] == control.past_ack[2]:
-                    #FAST RETRANSMIT
-                    print(f"----FAST RETRANSMIT with ACK {control.past_ack}----")
                     data_retransmit(control,flp)
                     control.start_timer()
                     control.past_ack = []
-                    pass
+
                     
             if not control.check_buffer_full():
-                #print(f"buffer length { sum(len(segment[4:]) for segment in control.buffer)} max_win {control.max_win}")
                 bytes_read = f.read(Constant.MAX_MSS)
-                #print(f"read segment with byte size {len(bytes_read)}")
+                # finish reading
                 if not bytes_read:
-
+                    # finish reading and receive all ACK for data
                     if control.finish_sent and control.data_sent == control.data_ack:
-                        print(f"transmitting done at curr seq {control.curr_seqno}")
                         control.transit("CLOSING")
                     # file transmitting is done
                         break
                     else:
                         control.finish_sent = True
                         continue
-                # print(f"READ ABOVE")
+
                 type_num = Constant.DATA
                 type_field = type_num.to_bytes(2,"big")
                 send_seqno = control.get_send_seqno(bytes_read)
@@ -357,9 +334,7 @@ def send_data(
             
                 seqno_field = send_seqno.to_bytes(2,"big")
                 segment = type_field+seqno_field+bytes_read
-                                # control.curr_seqno += len(bytes_read)
-                # if control.curr_seqno >= Constant.MAX_SEQ:
-                #     control.curr_seqno -= Constant.MAX_SEQ
+
                 if random.random() < flp:
                     log_data(control,
                         flag = "drp",
@@ -383,21 +358,11 @@ def send_data(
                 control.data_sent += len(bytes_read)
                 if not control.buffer:
                     control.start_timer()
-                    #print(f"Update_seqno")
-                    # control.update_seqno(bytes_read)
+
                 required_ack = utils.get_segment_ack_num(segment)
-                '''
-                Distinction required, on whether segment is first in buffer
-                or others in buffer
-                '''
+
                 control.buffer.append((segment,required_ack))
-                # control.start_timer()
 
-
-
-                
-            pass
-    pass
 
 def send_finish(
         control,flp):
@@ -412,7 +377,6 @@ def send_finish(
     seqno_field = control.curr_seqno.to_bytes(2,"big")
     segment = type_field+seqno_field
     if random.random() < flp:
-        print(f"FINISH DROPPED")
         log_data(control,
                 flag = "drp",
                 time = time.time(),
@@ -421,7 +385,6 @@ def send_finish(
                 number_of_bytes=0)
     else:
         control.socket.send(segment)
-        print(f"FIN SENDED")
         log_data(control,
                 flag = "snd",
                 time = time.time(),
@@ -470,7 +433,6 @@ def data_retransmit(control,flp):
             seq_no=int.from_bytes(poped_segment[2:4],byteorder='big'),
             number_of_bytes=len(poped_segment[4:]))
 
-        print(f"Retransmit for seq {int.from_bytes(poped_segment[2:4],byteorder='big')}")
         control.socket.send(poped_segment)
         
 def timer_thread(
@@ -532,11 +494,7 @@ if __name__ == "__main__":
         socket= sock,
         rto = rto,
         max_win = max_win)
-    '''
-    Add Threading
-    Thread for Receiving
-    
-    '''
+
     receiver = threading.Thread(target = receive,args=(control,rlp,)) #
     receiver.start()
 
@@ -546,18 +504,14 @@ if __name__ == "__main__":
             if control.timer:
                 continue
             if control.get_state() == "CLOSED" or control.get_state() == "SYN_SENT":
-                #send_setup(control,0.3) # use to test drop ACK in SYN
                 send_setup(control,flp)
                 control.start_timer()
             elif control.get_state() == "ESTABLISHED":
                 # Connectoin established, ready to sent file
                 send_data(control,txt_file_to_send,flp)
-                #print(f"Finish Sending DATA at state {control.get_state()}")
-                # control.is_alive = False  
             elif control.get_state() == "CLOSING" or control.get_state() == "FIN_WAIT":
                 #print(f"control buffer length {control.buffer} and time {control.timer} state is {control.get_state()}")
                 if not control.buffer:
-                    #send_finish(control,0.6)# For testing purporses
                     send_finish(control,flp) 
                     control.start_timer()
             else:
